@@ -73,7 +73,7 @@ export const EmptyViewport = () => {
             ref={inputRef}
             data-testid="studio-vrm-file-input"
             type="file"
-            accept=".vrm"
+            accept=".vrm,.glb,application/octet-stream,model/gltf-binary"
             className="hidden"
             onChange={(e) => handleFile(e.target.files?.[0])}
           />

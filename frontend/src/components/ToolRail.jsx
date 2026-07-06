@@ -86,7 +86,7 @@ export const ToolRail = () => {
         ref={fileRef}
         data-testid="rail-vrm-file-input"
         type="file"
-        accept=".vrm"
+        accept=".vrm,.glb,application/octet-stream,model/gltf-binary"
         className="hidden"
         onChange={(e) => handleFile(e.target.files?.[0])}
       />
