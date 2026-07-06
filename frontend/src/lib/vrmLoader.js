@@ -32,12 +32,15 @@ export async function loadVRM(url, { onProgress } = {}) {
           reject(new Error("Not a valid VRM file"));
           return;
         }
+        // Skip VRMUtils optimizations - they can distort some hair/face meshes
+        // Rotate VRM 0.x models 180° so they face the camera (+Z)
         try {
-          VRMUtils.removeUnnecessaryVertices(gltf.scene);
-          VRMUtils.combineSkeletons(gltf.scene);
-        } catch (_) {
-          // best effort
-        }
+          const meta = vrm.meta || {};
+          const isV0 = meta.metaVersion === "0" || meta.specVersion === "0.0" || !!meta.title;
+          if (isV0 && VRMUtils.rotateVRM0) {
+            VRMUtils.rotateVRM0(vrm);
+          }
+        } catch (_) {}
         vrm.scene.traverse((obj) => {
           if (obj.isMesh) {
             obj.frustumCulled = false;

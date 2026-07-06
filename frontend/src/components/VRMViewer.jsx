@@ -217,6 +217,24 @@ export const VRMViewer = () => {
         ref.vrm = vrm;
         ref.scene.add(vrm.scene);
         window.__vcs_vrm = vrm;
+
+        // Auto-frame the character
+        try {
+          const box = new THREE.Box3().setFromObject(vrm.scene);
+          const size = box.getSize(new THREE.Vector3());
+          const center = box.getCenter(new THREE.Vector3());
+          const height = Math.max(size.y, 1.0);
+          const dist = height * 1.8;
+          if (ref.controls && ref.camera) {
+            ref.controls.target.set(center.x, center.y + height * 0.05, center.z);
+            ref.camera.position.set(center.x, center.y + height * 0.15, center.z + dist);
+            ref.camera.near = 0.05;
+            ref.camera.far = Math.max(50, dist * 20);
+            ref.camera.updateProjectionMatrix();
+            ref.controls.update();
+          }
+        } catch (_) {}
+
         setStatus("ready");
         setStatusMessage("");
 
