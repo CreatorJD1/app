@@ -13,14 +13,14 @@
   },
   {
     "content": "Screenshot verification of fix",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Run testing_agent_v3 to verify centering fix",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Move on to improve AI texture UV mapping",
-    "status": "pending"
+    "status": "in_progress"
   }
 ]

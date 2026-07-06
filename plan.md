@@ -1,8 +1,10 @@
 # plan.md
 
 ## Objectives
-- Prove the **core AI workflows** for anime-only creation: (1) prompt → anime textures, (2) reference image → anime variation, (3) prompt/reference → multi-angle turnaround sheet.
-- Build a V1 **VRM companion driver**: load VRM, render in 3D, runtime animations + expressions + basic posing, apply generated textures to VRM materials.
+- Prove and harden the **core AI workflows** for anime-only creation: (1) prompt → anime textures, (2) reference image → anime variation, (3) prompt/reference → multi-angle turnaround sheet.
+- Deliver a stable V1 **VRM companion driver**: load VRM, render in 3D, runtime animations + expressions + basic posing, apply generated textures to VRM materials.
+- Ensure **viewport reliability** across diverse VRMs (robust camera auto-framing, safe controls), so users can consistently preview animations/poses/textures.
+- Improve **AI-driven texture application fidelity**: streamline generation and ensure textures map correctly to intended VRM material slots/UVs (minimize stretching/misalignment), with repeatable user workflows.
 - Persist projects (VRM + generated assets + settings) and ensure end-to-end reliability with incremental testing.
 
 ---
@@ -45,6 +47,7 @@
 3. As a user, I can control facial expressions with sliders (blink/smile/angry + vowel mouth shapes).
 4. As a user, I can generate anime textures in-app and preview/apply them to VRM materials (face/hair/clothes).
 5. As a user, I can save a project (VRM + textures + selected settings) and reload it later.
+6. As a user, when I import a VRM, the character spawns **centered and fully visible** (no cut-off), regardless of avatar height/mesh structure.
 
 ### Implementation Steps
 - Repo setup:
@@ -67,15 +70,21 @@
   - Animation mixer + bundled clips.
   - Expression mapping to VRM blendshapes.
   - Material mapping UI (pick VRM material → set baseColorMap to generated texture).
+- **Viewport Reliability / Camera Auto-frame (P0) — COMPLETED**
+  - Clean rewrite of camera targeting math in `frontend/src/components/VRMViewer.jsx`.
+  - Fix root cause: `computeVRMBoundingBox` was accidentally nested inside `makeGradientTexture`, throwing `ReferenceError` and forcing silent fallback to hardcoded camera coords.
+  - Implement robust VRM bounding-box union (per mesh/skinned mesh) and aspect-aware fit-to-frame using both vertical/horizontal FOV.
+  - Verified with **testing_agent_v3**: 12/12 tests passed (centering, full visibility, wave animation, orbit controls, no console errors).
 
 ### Testing (end of Phase 2)
 - 1 full E2E pass:
-  - Upload VRM → render → play animation → change expressions → generate texture → apply → save project → reload project.
+  - Upload VRM → render (centered) → play animation → change expressions → generate texture → apply → save project → reload project.
 - Fix until stable (no broken core flows).
 
 ### Success Criteria
 - V1 runs locally with no mocks for AI generation.
 - VRM loads and animates; textures generate and visibly apply; projects persist and reload.
+- Imported VRMs consistently auto-frame into view (centered, no cut-off) across varied avatars.
 
 ---
 
@@ -124,8 +133,19 @@
 ---
 
 ## Next Actions (Immediate)
-1. Run websearch + write `poc_nano_banana.py` and get POC outputs saved with manifests.
-2. Lock prompt templates + turnaround format based on POC results.
-3. Scaffold FARM repo and implement FastAPI generation endpoints reusing POC logic.
-4. Implement VRM viewer + animation + expressions in React.
-5. Implement Texture Lab UI and material application, then complete the Phase 2 E2E test.
+1. **Start UV-accurate texture application improvements (new top priority)**
+   - Audit current pipeline:
+     - Backend: `/app/backend/ai_service.py` (generation + any post-processing)
+     - Frontend: material discovery + texture apply flow (`discoverMaterials`, material slot UI, texture assignment)
+   - Identify how generated images map to specific VRM materials today (baseColorMap? emissive? shade?) and where misalignment occurs (UV layout mismatch vs wrong material target vs color space vs texture transform).
+2. Add a **Texture-to-Material Fit workflow** (incremental, no GPU assumptions):
+   - Generate or display **UV previews** per material (wireframe UV snapshot) so users can see how a texture will map.
+   - Add optional **2D transform controls** at apply-time (offset/scale/rotation) via `texture.offset`, `texture.repeat`, `texture.center`, `texture.rotation` with a “Reset” button.
+   - Add “Apply to: face/hair/top/bottom/accessory” guided presets that select likely materials automatically.
+3. Add **validation + persistence**:
+   - Save per-material texture assignment + transform settings into project metadata.
+   - Add a quick “before/after” preview and a one-click rollback.
+4. Testing mandate for the new work:
+   - Add a focused frontend test run after implementing UV-mapping features:
+     - Import VRM → apply generated texture to a chosen material → verify visible change + no console errors → save → reload.
+5. After texture UV mapping improvement is stable, proceed with remaining Phase 2/3 backlog as needed (pose/animation E2E regression pass, turnaround attachment, export).
