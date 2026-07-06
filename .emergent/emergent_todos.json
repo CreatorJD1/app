@@ -1,0 +1,34 @@
+[
+  {
+    "content": "Phase 1: Get Gemini Nano Banana integration playbook",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1: Create POC script proving anime texture, image-to-image, and turnaround generation",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 1: Run POC and fix until successful",
+    "status": "completed"
+  },
+  {
+    "content": "Phase 2: Get design guidelines from design_agent",
+    "status": "in_progress"
+  },
+  {
+    "content": "Phase 2: Build backend (FastAPI endpoints for AI gen, projects, VRM metadata)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: Build frontend (VRM viewer, animation, expressions, texture lab, reference studio)",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: All user stories covered in development and testing",
+    "status": "pending"
+  },
+  {
+    "content": "Phase 2: End-to-end testing using testing_agent_v3",
+    "status": "pending"
+  }
+]

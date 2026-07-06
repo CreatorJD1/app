@@ -1,0 +1,33 @@
+{
+  "started_at": "2026-07-06T01:15:12.063857+00:00",
+  "model": "gemini-3.1-flash-image-preview",
+  "text_to_texture": {
+    "prompt": "A seamless tileable anime clothing fabric texture, pastel pink and lavender palette, small cherry blossom motif, square format. Style: modern Japanese anime, cel-shaded, clean lineart, expressive VTuber character art, high quality VRoid aesthetic, vibrant flat colors, soft rim light.",
+    "ok": true,
+    "file": "/app/scripts/poc_output/01_texture_anime.png",
+    "images_count": 1,
+    "text_preview": ""
+  },
+  "image_to_variant": {
+    "ok": true,
+    "reference": "/app/scripts/poc_output/02a_reference.jpg",
+    "variant": "/app/scripts/poc_output/02b_variant.png",
+    "ref_prompt": "A front-facing anime portrait of a young female character with long silver hair, purple eyes, wearing a school uniform, plain white background. Style: modern Japanese anime, cel-shaded, clean lineart, expressive VTuber character art, high quality VRoid aesthetic, vibrant flat colors, soft rim light.",
+    "variant_prompt": "Using the character in the provided reference image, redraw them in a full body 3/4 view waving happily. Keep the same silver hair, purple eyes, and school uniform. Clean white background. Style: modern Japanese anime, cel-shaded, clean lineart, expressive VTuber character art, high quality VRoid aesthetic, vibrant flat colors, soft rim light.",
+    "var_text_preview": "",
+    "var_images_count": 1
+  },
+  "turnaround": {
+    "ok": true,
+    "count": 4,
+    "files": [
+      "/app/scripts/poc_output/03_turnaround_0_front.png",
+      "/app/scripts/poc_output/03_turnaround_1_three_quarter.png",
+      "/app/scripts/poc_output/03_turnaround_2_side.png",
+      "/app/scripts/poc_output/03_turnaround_3_back.png"
+    ],
+    "base_desc": "an anime girl character with short pink hair and white streaks, teal eyes, a sci-fi hoodie with glowing seams, black shorts, and sneakers, in a T-pose"
+  },
+  "duration_s": 41.0,
+  "all_ok": true
+}
