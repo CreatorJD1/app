@@ -142,7 +142,12 @@ export const VRMViewer = () => {
       controls.update();
       if (ref.vrm) {
         // 1) apply base procedural clip (resets rotations first)
-        applyClip(ref.vrm, s.animationClip, t, s.animationSpeed, { customFrames: s.customFrames });
+        applyClip(ref.vrm, s.animationClip, t, s.animationSpeed, {
+          customFrames: s.customFrames,
+          loop: s.animationLoop,
+          duration: s.animationDuration,
+          talkEmotion: s.talkEmotion === "neutral" ? null : s.talkEmotion,
+        });
         // 2) apply user bone offsets on top
         applyBoneOffsets(ref.vrm, s.boneOffsets);
         // 3) apply expressions from store

@@ -1,0 +1,33 @@
+version: "3.9"
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo_data:/data/db
+    ports:
+      - "27017:27017"
+
+  vcs:
+    build: .
+    restart: unless-stopped
+    depends_on:
+      - mongo
+    ports:
+      - "7860:7860"
+    environment:
+      MONGO_URL: mongodb://mongo:27017
+      DB_NAME: vroid_companion
+      CORS_ORIGINS: "*"
+      # set these to real values before starting
+      EMERGENT_LLM_KEY: ${EMERGENT_LLM_KEY}
+      VROID_CLIENT_ID: ${VROID_CLIENT_ID:-}
+      VROID_CLIENT_SECRET: ${VROID_CLIENT_SECRET:-}
+      HF_TOKEN: ${HF_TOKEN:-}
+      HF_DATASET_REPO: ${HF_DATASET_REPO:-}
+    volumes:
+      - vrm_storage:/app/backend/storage
+
+volumes:
+  mongo_data:
+  vrm_storage:

@@ -1,42 +1,42 @@
 [
   {
-    "content": "P3: Pose safety - anatomical limits + clamp + safety toggle",
+    "content": "P3: Pose safety",
     "status": "completed"
   },
   {
-    "content": "P3: Extended animation prefabs (idle_soft/cheer/kpop/run/jump/bow/hands-on-hips/thinking/peace)",
+    "content": "P3: Extended animation prefabs + new emotion clips (talking/cry/scream/die/sleep)",
     "status": "completed"
   },
   {
-    "content": "P3: Procedural animation editor - keyframe record/play/loop",
+    "content": "P3: Procedural keyframe timeline",
     "status": "completed"
   },
   {
-    "content": "P3: Wardrobe & Accessories tabs (auto coordinated outfits + accessories)",
+    "content": "P3: Loop toggle + duration override",
     "status": "completed"
   },
   {
-    "content": "P3: Poly subdivision (Loop) with Settings toggle + Apply",
+    "content": "P3: Wardrobe + Accessories tabs",
     "status": "completed"
   },
   {
-    "content": "P3: 8K/4K/2K progressive upscale button per asset",
+    "content": "P3: Poly subdivision + 8K upscale",
     "status": "completed"
   },
   {
-    "content": "P3: Character Analyzer (reference → VRoid recipe via Gemini vision)",
+    "content": "P3: Character Analyzer",
     "status": "completed"
   },
   {
-    "content": "P3: VRoid Hub URL import (server proxy)",
+    "content": "P3: VRoid Unity SDK REST port + docs (DEPLOY.md)",
     "status": "completed"
   },
   {
-    "content": "P3: Backend wardrobe/accessories/analyze/upscale/hub endpoints",
+    "content": "P3: Persistent hosting configs (Dockerfile, HF Space, Colab notebook, docker-compose)",
     "status": "completed"
   },
   {
-    "content": "P3: End-to-end testing via testing_agent",
-    "status": "in_progress"
+    "content": "P3: GitHub push instructions delivered via support_agent",
+    "status": "completed"
   }
 ]

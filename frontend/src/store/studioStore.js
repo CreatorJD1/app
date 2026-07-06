@@ -28,6 +28,12 @@ export const useStudioStore = create((set, get) => ({
   setAnimationClip: (clip) => set({ animationClip: clip }),
   animationSpeed: 1.0,
   setAnimationSpeed: (v) => set({ animationSpeed: v }),
+  animationLoop: true,
+  setAnimationLoop: (v) => set({ animationLoop: v }),
+  animationDuration: 0, // 0 = no override; otherwise seconds
+  setAnimationDuration: (v) => set({ animationDuration: v }),
+  talkEmotion: "neutral", // neutral | happy | sad | angry | surprised | relaxed
+  setTalkEmotion: (v) => set({ talkEmotion: v }),
   autoBlink: true,
   setAutoBlink: (v) => set({ autoBlink: v }),
   lookAtMouse: true,

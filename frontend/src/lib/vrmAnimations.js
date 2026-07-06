@@ -15,7 +15,17 @@ const ANIMATED_BONES = [
 
 export function applyClip(vrm, clip, timeSec, speed = 1, extras = {}) {
   if (!vrm || !vrm.humanoid) return;
-  const t = timeSec * speed;
+  const dur = extras.duration || 0;
+  // If duration is set, remap time into a normalized cycle (loop or hold at end)
+  let effT = timeSec * speed;
+  if (dur > 0) {
+    if (extras.loop === false) {
+      effT = Math.min(effT, dur);
+    } else {
+      effT = effT % dur;
+    }
+  }
+  const t = effT;
 
   ANIMATED_BONES.forEach((n) => {
     const b = getBone(vrm, n);
@@ -41,6 +51,11 @@ export function applyClip(vrm, clip, timeSec, speed = 1, extras = {}) {
     case "run": run(vrm, t); break;
     case "jump": jump(vrm, t); break;
     case "sit": sit(vrm, t); break;
+    case "cry": cry(vrm, t); break;
+    case "scream": scream(vrm, t); break;
+    case "die": die(vrm, t); break;
+    case "sleep": sleep(vrm, t); break;
+    case "talking": talking(vrm, t, extras.talkEmotion); break;
     case "custom": custom(vrm, t, extras.customFrames); break;
     default: break;
   }
@@ -278,6 +293,147 @@ function sit(vrm, t) {
   if (hips) hips.position.y = -0.35;
 }
 
+function cry(vrm, t) {
+  // Head down, shoulders hunched, hands to face, small shakes
+  const head = getBone(vrm, "head");
+  const spine = getBone(vrm, "spine");
+  const chest = getBone(vrm, "chest") || getBone(vrm, "upperChest");
+  const lu = getBone(vrm, "leftUpperArm"), ru = getBone(vrm, "rightUpperArm");
+  const ll = getBone(vrm, "leftLowerArm"), rl = getBone(vrm, "rightLowerArm");
+  const lh = getBone(vrm, "leftHand"), rh = getBone(vrm, "rightHand");
+  const shake = Math.sin(t * 8) * 0.03;
+  if (spine) spine.rotation.x = 0.25;
+  if (chest) chest.rotation.x = 0.2 + shake;
+  if (head) { head.rotation.x = 0.4; head.rotation.z = shake * 3; }
+  // Hands up to face
+  if (lu) { lu.rotation.z = 0.6; lu.rotation.x = -0.4; }
+  if (ru) { ru.rotation.z = -0.6; ru.rotation.x = -0.4; }
+  if (ll) ll.rotation.x = -2.0;
+  if (rl) rl.rotation.x = -2.0;
+  if (lh) lh.rotation.x = -0.3;
+  if (rh) rh.rotation.x = -0.3;
+}
+
+function scream(vrm, t) {
+  // Head back, mouth open, arms flung wide, chest heaving
+  const head = getBone(vrm, "head");
+  const neck = getBone(vrm, "neck");
+  const spine = getBone(vrm, "spine");
+  const chest = getBone(vrm, "chest") || getBone(vrm, "upperChest");
+  const lu = getBone(vrm, "leftUpperArm"), ru = getBone(vrm, "rightUpperArm");
+  const ll = getBone(vrm, "leftLowerArm"), rl = getBone(vrm, "rightLowerArm");
+  const heave = Math.sin(t * 4) * 0.08;
+  if (spine) spine.rotation.x = -0.15;
+  if (chest) chest.rotation.x = -0.1 + heave;
+  if (neck) neck.rotation.x = -0.35;
+  if (head) head.rotation.x = -0.4;
+  if (lu) { lu.rotation.z = 2.6; lu.rotation.x = -0.6; }
+  if (ru) { ru.rotation.z = -2.6; ru.rotation.x = -0.6; }
+  if (ll) ll.rotation.x = -0.4;
+  if (rl) rl.rotation.x = -0.4;
+  // Drive mouth "aa" if expression available
+  if (vrm.expressionManager) {
+    const aa = vrm.expressionManager.getExpression("aa");
+    if (aa) aa.weight = Math.max(aa.weight, 0.9 + Math.sin(t * 6) * 0.1);
+    const surprised = vrm.expressionManager.getExpression("surprised");
+    if (surprised) surprised.weight = Math.max(surprised.weight, 0.8);
+  }
+}
+
+function die(vrm, t) {
+  // Fall down: crumple over ~1s, then rest.
+  const collapseTime = 1.0;
+  const p = Math.min(1, t / collapseTime);
+  const ease = 1 - Math.pow(1 - p, 3); // ease-out cubic
+  const spine = getBone(vrm, "spine");
+  const chest = getBone(vrm, "chest") || getBone(vrm, "upperChest");
+  const head = getBone(vrm, "head");
+  const hips = getBone(vrm, "hips");
+  const lu = getBone(vrm, "leftUpperArm"), ru = getBone(vrm, "rightUpperArm");
+  const ll = getBone(vrm, "leftLowerArm"), rl = getBone(vrm, "rightLowerArm");
+  const lUp = getBone(vrm, "leftUpperLeg"), rUp = getBone(vrm, "rightUpperLeg");
+  const lLo = getBone(vrm, "leftLowerLeg"), rLo = getBone(vrm, "rightLowerLeg");
+  if (spine) spine.rotation.x = 1.2 * ease;
+  if (chest) chest.rotation.x = 0.6 * ease;
+  if (head) head.rotation.x = 0.6 * ease;
+  if (hips) hips.position.y = -0.5 * ease;
+  if (lu) { lu.rotation.z = 0.5 - 0.3 * ease; lu.rotation.x = 0.4 * ease; }
+  if (ru) { ru.rotation.z = -0.5 + 0.3 * ease; ru.rotation.x = 0.4 * ease; }
+  if (ll) ll.rotation.x = -0.5 * ease;
+  if (rl) rl.rotation.x = -0.5 * ease;
+  if (lUp) lUp.rotation.x = -0.5 * ease;
+  if (rUp) rUp.rotation.x = -0.5 * ease;
+  if (lLo) lLo.rotation.x = -0.8 * ease;
+  if (rLo) rLo.rotation.x = -0.8 * ease;
+  // Tiny post-death sway
+  if (p >= 1 && chest) chest.rotation.z = Math.sin(t * 0.3) * 0.02;
+}
+
+function sleep(vrm, t) {
+  // Sit + head lolling, gentle breathing
+  const lUp = getBone(vrm, "leftUpperLeg"), rUp = getBone(vrm, "rightUpperLeg");
+  const lLo = getBone(vrm, "leftLowerLeg"), rLo = getBone(vrm, "rightLowerLeg");
+  const spine = getBone(vrm, "spine");
+  const chest = getBone(vrm, "chest") || getBone(vrm, "upperChest");
+  const head = getBone(vrm, "head");
+  const lu = getBone(vrm, "leftUpperArm"), ru = getBone(vrm, "rightUpperArm");
+  const hips = getBone(vrm, "hips");
+  const breath = Math.sin(t * 1.0) * 0.04;
+  if (lUp) lUp.rotation.x = -1.5;
+  if (rUp) rUp.rotation.x = -1.5;
+  if (lLo) lLo.rotation.x = -1.5;
+  if (rLo) rLo.rotation.x = -1.5;
+  if (spine) spine.rotation.x = 0.3;
+  if (chest) chest.rotation.x = 0.2 + breath;
+  if (head) { head.rotation.x = 0.7; head.rotation.z = 0.2; }
+  if (lu) { lu.rotation.z = 1.4; lu.rotation.x = -0.15; }
+  if (ru) { ru.rotation.z = -1.4; ru.rotation.x = -0.15; }
+  if (hips) hips.position.y = -0.35;
+  // Closed eyes if blink expression available
+  if (vrm.expressionManager) {
+    const blink = vrm.expressionManager.getExpression("blink");
+    if (blink) blink.weight = 1.0;
+    const relaxed = vrm.expressionManager.getExpression("relaxed");
+    if (relaxed) relaxed.weight = Math.max(relaxed.weight, 0.6);
+  }
+}
+
+// Talking: cycles mouth shapes (aa/ih/ou/ee/oh) at natural cadence.
+// emotion (optional): "happy" | "sad" | "angry" | "surprised" \u2014 overlays that expression.
+function talking(vrm, t, emotion) {
+  // Very light idle sway
+  idle(vrm, t * 0.5);
+  if (!vrm.expressionManager) return;
+  const em = vrm.expressionManager;
+  const shapes = ["aa", "ih", "ou", "ee", "oh"];
+  // Envelope: fast attack/release with mostly-mid amplitude
+  // Cycle a shape every ~0.25s using a pseudo-random selector.
+  const cycleLen = 0.28;
+  const idx = Math.floor(t / cycleLen);
+  const local = (t % cycleLen) / cycleLen;
+  const envelope = Math.sin(local * Math.PI) * (0.55 + 0.35 * Math.sin(t * 3.0));
+  // Reset mouth shapes we control
+  shapes.forEach((s) => {
+    const e = em.getExpression(s); if (e) e.weight = 0;
+  });
+  const activeShape = shapes[idx % shapes.length];
+  const active = em.getExpression(activeShape);
+  if (active) active.weight = Math.max(0, envelope);
+
+  // Emotion overlay
+  if (emotion) {
+    const map = { happy: "happy", sad: "sad", angry: "angry", surprised: "surprised", relaxed: "relaxed" };
+    const target = map[emotion];
+    if (target) {
+      const e = em.getExpression(target);
+      if (e) e.weight = Math.max(e.weight, 0.55);
+    }
+  }
+  // Small head bob for emphasis
+  const head = getBone(vrm, "head");
+  if (head) head.rotation.x += Math.sin(t * 4) * 0.02;
+}
+
 function custom(vrm, t, frames) {
   if (!frames || frames.length < 1) return;
   const sorted = [...frames].sort((a, b) => a.time - b.time);
@@ -325,6 +481,11 @@ export const CLIP_META = [
   { id: "thinking", label: "Thinking", desc: "Hand to chin + tilt", group: "Gesture" },
   { id: "hands_hip", label: "Hands on Hips", desc: "Confident pose", group: "Gesture" },
   { id: "peace", label: "Peace Sign", desc: "Classic V pose", group: "Gesture" },
+  { id: "talking", label: "Talking", desc: "Mouth shapes + emotion overlay", group: "Emotion" },
+  { id: "cry", label: "Cry", desc: "Head down, hands to face, shakes", group: "Emotion" },
+  { id: "scream", label: "Scream", desc: "Head back, wide arms, mouth open", group: "Emotion" },
+  { id: "sleep", label: "Sleep", desc: "Sits, head lolling, closed eyes", group: "Emotion" },
+  { id: "die", label: "Die", desc: "One-shot fall & rest", group: "Emotion" },
   { id: "dance", label: "Dance", desc: "Rhythmic sway", group: "Dance" },
   { id: "kpop", label: "K-Pop", desc: "Punchy alternating hits", group: "Dance" },
   { id: "walk", label: "Walk", desc: "Step cycle", group: "Locomotion" },

@@ -9,13 +9,19 @@ import { Label } from "@/components/ui/label";
 import { useStudioStore } from "@/store/studioStore";
 import { CLIP_META } from "@/lib/vrmAnimations";
 
-const GROUPS = ["Idle", "Gesture", "Dance", "Locomotion", "Pose", "Custom"];
+const GROUPS = ["Idle", "Gesture", "Emotion", "Dance", "Locomotion", "Pose", "Custom"];
 
 export const AnimationPanel = () => {
   const clip = useStudioStore((s) => s.animationClip);
   const setClip = useStudioStore((s) => s.setAnimationClip);
   const speed = useStudioStore((s) => s.animationSpeed);
   const setSpeed = useStudioStore((s) => s.setAnimationSpeed);
+  const loop = useStudioStore((s) => s.animationLoop);
+  const setLoop = useStudioStore((s) => s.setAnimationLoop);
+  const duration = useStudioStore((s) => s.animationDuration);
+  const setDuration = useStudioStore((s) => s.setAnimationDuration);
+  const talkEmotion = useStudioStore((s) => s.talkEmotion);
+  const setTalkEmotion = useStudioStore((s) => s.setTalkEmotion);
   const autoBlink = useStudioStore((s) => s.autoBlink);
   const setAutoBlink = useStudioStore((s) => s.setAutoBlink);
   const lookAtMouse = useStudioStore((s) => s.lookAtMouse);
@@ -75,6 +81,42 @@ export const AnimationPanel = () => {
             </div>
             <Slider data-testid="animation-speed-slider" value={[speed]} min={0} max={2.5} step={0.05} onValueChange={([v]) => setSpeed(v)} />
           </div>
+
+          <div className="space-y-1.5">
+            <div className="flex items-center justify-between">
+              <Label className="text-xs text-muted-foreground">Duration override (0 = clip default)</Label>
+              <span className="font-mono text-xs">{duration ? duration.toFixed(1) + "s" : "off"}</span>
+            </div>
+            <Slider data-testid="animation-duration-slider" value={[duration]} min={0} max={20} step={0.1} onValueChange={([v]) => setDuration(v)} />
+          </div>
+
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm">Loop</div>
+              <div className="text-[10px] text-muted-foreground">Off = one-shot (great for Die, Jump)</div>
+            </div>
+            <Switch data-testid="animation-loop-toggle" checked={loop} onCheckedChange={setLoop} />
+          </div>
+
+          {clip === "talking" && (
+            <div>
+              <Label className="text-xs text-muted-foreground">Talking emotion overlay</Label>
+              <div className="grid grid-cols-3 gap-1.5 mt-1">
+                {["neutral", "happy", "sad", "angry", "surprised", "relaxed"].map((em) => (
+                  <button
+                    key={em}
+                    data-testid={`talk-emotion-${em}`}
+                    onClick={() => setTalkEmotion(em)}
+                    className={`text-[11px] rounded-md border px-2 py-1 transition-colors ${
+                      talkEmotion === em ? "border-primary/60 text-primary bg-primary/10" : "border-border/70"
+                    }`}
+                  >
+                    {em}
+                  </button>
+                ))}
+              </div>
+            </div>
+          )}
         </CardContent>
       </Card>
 
