@@ -28,3 +28,4 @@ Thumbs.db
 .idea/
 *.swp
 frontend/node_modules/.cache/default-development/9.pack
+frontend/node_modules/.cache/default-development/8.pack

@@ -230,10 +230,15 @@ export const VRMViewer = () => {
           const size = box.getSize(new THREE.Vector3());
           const center = box.getCenter(new THREE.Vector3());
           const height = Math.max(size.y, 1.0);
-          const dist = height * 1.8;
+          // Compute optimal distance based on camera FOV so the FULL character fits vertically
+          const fovRad = (ref.camera.fov * Math.PI) / 180;
+          const distV = (height * 0.6) / Math.tan(fovRad / 2); // fit ~1.2x height
+          const distH = (size.x * 0.6) / Math.tan((fovRad * ref.camera.aspect) / 2);
+          const dist = Math.max(distV, distH, 1.5);
           if (ref.controls && ref.camera) {
-            ref.controls.target.set(center.x, center.y + height * 0.05, center.z);
-            ref.camera.position.set(center.x, center.y + height * 0.15, center.z + dist);
+            // Target the mid-torso so head+feet are visible
+            ref.controls.target.set(center.x, center.y, center.z);
+            ref.camera.position.set(center.x, center.y + height * 0.05, center.z + dist);
             ref.camera.near = 0.05;
             ref.camera.far = Math.max(50, dist * 20);
             ref.camera.updateProjectionMatrix();
