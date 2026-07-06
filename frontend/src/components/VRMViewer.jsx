@@ -224,27 +224,36 @@ export const VRMViewer = () => {
         ref.scene.add(vrm.scene);
         window.__vcs_vrm = vrm;
 
-        // Auto-frame the character
+        // Auto-frame the character using a bounding sphere (robust across VRM proportions)
         try {
           const box = new THREE.Box3().setFromObject(vrm.scene);
-          const size = box.getSize(new THREE.Vector3());
-          const center = box.getCenter(new THREE.Vector3());
-          const height = Math.max(size.y, 1.0);
-          // Compute optimal distance based on camera FOV so the FULL character fits vertically
+          if (box.isEmpty()) throw new Error("empty bbox");
+          const sphere = new THREE.Sphere();
+          box.getBoundingSphere(sphere);
+          const center = sphere.center.clone();
+          const radius = Math.max(sphere.radius, 0.5);
           const fovRad = (ref.camera.fov * Math.PI) / 180;
-          const distV = (height * 0.6) / Math.tan(fovRad / 2); // fit ~1.2x height
-          const distH = (size.x * 0.6) / Math.tan((fovRad * ref.camera.aspect) / 2);
-          const dist = Math.max(distV, distH, 1.5);
+          // Distance to fit the sphere vertically AND horizontally
+          const distV = radius / Math.sin(fovRad / 2);
+          const distH = distV / Math.max(0.5, ref.camera.aspect);
+          const dist = Math.max(distV, distH) * 1.15;
           if (ref.controls && ref.camera) {
-            // Target the mid-torso so head+feet are visible
             ref.controls.target.set(center.x, center.y, center.z);
-            ref.camera.position.set(center.x, center.y + height * 0.05, center.z + dist);
-            ref.camera.near = 0.05;
-            ref.camera.far = Math.max(50, dist * 20);
+            ref.camera.position.set(center.x, center.y, center.z + dist);
+            ref.camera.near = Math.max(0.01, dist / 200);
+            ref.camera.far = dist * 50;
             ref.camera.updateProjectionMatrix();
             ref.controls.update();
           }
-        } catch (_) {}
+        } catch (err) {
+          // Fallback: known-good default framing for a standard-height character
+          if (ref.camera && ref.controls) {
+            ref.controls.target.set(0, 1.25, 0);
+            ref.camera.position.set(0, 1.35, 2.4);
+            ref.camera.updateProjectionMatrix();
+            ref.controls.update();
+          }
+        }
 
         setStatus("ready");
         setStatusMessage("");
