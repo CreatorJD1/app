@@ -1,5 +1,12 @@
 import { create } from "zustand";
 
+export const defaultTransform = () => ({
+  offset: [0, 0],
+  repeat: [1, 1],
+  rotation: 0,
+  flipY: true,
+});
+
 export const useStudioStore = create((set, get) => ({
   project: null,
   setProject: (project) => set({ project }),
@@ -22,6 +29,20 @@ export const useStudioStore = create((set, get) => ({
     set((s) => ({ materialAssignments: { ...s.materialAssignments, [materialName]: asset } })),
   clearMaterialAssignment: (materialName) =>
     set((s) => { const next = { ...s.materialAssignments }; delete next[materialName]; return { materialAssignments: next }; }),
+
+  // Per-material 2D texture transforms — offset [x,y], repeat [x,y], rotation (rad), flipY
+  materialTransforms: {},
+  setMaterialTransform: (materialName, transform) =>
+    set((s) => ({ materialTransforms: { ...s.materialTransforms, [materialName]: { ...(s.materialTransforms[materialName] || defaultTransform()), ...transform } } })),
+  resetMaterialTransform: (materialName) =>
+    set((s) => { const next = { ...s.materialTransforms }; delete next[materialName]; return { materialTransforms: next }; }),
+
+  // Cross-dialog handoff: user extracts a UV template in MaterialsPanel and
+  // Texture Lab reference tab picks it up automatically.
+  pendingUvReference: null,
+  setPendingUvReference: (payload) => set({ pendingUvReference: payload }),
+  clearPendingUvReference: () => set({ pendingUvReference: null }),
+
 
   // Animation
   animationClip: "idle",

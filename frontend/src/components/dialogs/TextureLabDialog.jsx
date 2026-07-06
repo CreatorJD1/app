@@ -23,7 +23,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { Skeleton } from "@/components/ui/skeleton";
 import { useStudioStore } from "@/store/studioStore";
 import { api } from "@/lib/api";
-import { applyTextureToMaterial } from "@/lib/vrmLoader";
+import { applyTexture } from "@/lib/materialUtils";
 import { upscaleImage, UPSCALE_PRESETS } from "@/lib/upscaler";
 
 const TEXTURE_KINDS = [
@@ -50,6 +50,8 @@ export const TextureLabDialog = () => {
   const addRecentAsset = useStudioStore((s) => s.addRecentAsset);
   const availableMaterials = useStudioStore((s) => s.availableMaterials);
   const assignMaterial = useStudioStore((s) => s.assignMaterial);
+  const pendingUvReference = useStudioStore((s) => s.pendingUvReference);
+  const clearPendingUvReference = useStudioStore((s) => s.clearPendingUvReference);
 
   const [kind, setKind] = useState("texture");
   const [prompt, setPrompt] = useState(TEXTURE_KINDS[0].prompt);
@@ -59,15 +61,35 @@ export const TextureLabDialog = () => {
   const [refDataUrl, setRefDataUrl] = useState("");
   const [variantPrompt, setVariantPrompt] = useState("Change palette to pastel mint");
   const [pending, setPending] = useState([]); // ids for skeletons
+  const [activeTab, setActiveTab] = useState("prompt");
+  const [uvTargetMaterial, setUvTargetMaterial] = useState("");
 
   const refInputRef = useRef(null);
+
+  // Consume pending UV reference (set when user clicks "UV → Lab" in MaterialsPanel)
+  useEffect(() => {
+    if (open && pendingUvReference?.dataUrl) {
+      setRefDataUrl(pendingUvReference.dataUrl);
+      setRefFile(null);
+      setUvTargetMaterial(pendingUvReference.materialName || "");
+      setActiveTab("reference");
+      if (pendingUvReference.materialName) {
+        setVariantPrompt(
+          `Repaint this UV layout as an anime-style ${pendingUvReference.materialName} texture, cel-shaded, keep the exact seams and boundaries visible in the reference, no text, no watermarks.`
+        );
+      }
+      clearPendingUvReference();
+    }
+  }, [open, pendingUvReference, clearPendingUvReference]);
 
   const loadAssets = async () => {
     try {
       const params = { limit: 60 };
       const { assets } = await api.listAssets(params);
       setAssets(assets || []);
-    } catch (e) {}
+    } catch (e) {
+      /* silent — asset list is non-critical */
+    }
   };
   useEffect(() => {
     if (open) loadAssets();
@@ -106,6 +128,14 @@ export const TextureLabDialog = () => {
       addRecentAsset(asset);
       setAssets((a) => [asset, ...a]);
       toast.success("Variant generated");
+      // Auto-apply when in UV workflow
+      if (uvTargetMaterial) {
+        try {
+          await applyToMaterial(asset, uvTargetMaterial);
+        } catch (_) {
+          /* toast handled inside applyToMaterial */
+        }
+      }
     } catch (e) {
       toast.error("Generation failed", { description: e?.response?.data?.detail || String(e?.message || e) });
     } finally {
@@ -130,7 +160,7 @@ export const TextureLabDialog = () => {
     const vrm = window.__vcs_vrm;
     if (!vrm) return toast.error("Load a VRM to apply textures");
     try {
-      const count = await applyTextureToMaterial(vrm, matName, asset.data_url);
+      const count = await applyTexture(vrm, matName, asset.data_url);
       if (count === 0) toast.warning("Material not found");
       else {
         assignMaterial(matName, asset);
@@ -153,7 +183,7 @@ export const TextureLabDialog = () => {
           </DialogDescription>
         </DialogHeader>
 
-        <Tabs defaultValue="prompt" className="flex-1 flex flex-col min-h-0">
+        <Tabs value={activeTab} onValueChange={setActiveTab} className="flex-1 flex flex-col min-h-0">
           <TabsList>
             <TabsTrigger value="prompt" data-testid="texlab-tab-prompt">From Prompt</TabsTrigger>
             <TabsTrigger value="wardrobe" data-testid="texlab-tab-wardrobe">Wardrobe</TabsTrigger>
@@ -227,6 +257,28 @@ export const TextureLabDialog = () => {
           <TabsContent value="reference" className="flex-1 min-h-0 mt-2">
             <div className="grid grid-cols-[380px_1fr] gap-4 h-full">
               <div className="space-y-3 overflow-auto pr-2">
+                {uvTargetMaterial && (
+                  <div
+                    className="rounded-md border border-primary/40 bg-primary/10 p-2 text-[11px] leading-4"
+                    data-testid="texlab-uv-banner"
+                  >
+                    <div className="font-semibold text-primary flex items-center gap-1">
+                      <Sparkles size={12} /> UV workflow active
+                    </div>
+                    <div className="text-muted-foreground mt-0.5">
+                      Reference is the UV layout of <strong className="text-foreground">{uvTargetMaterial}</strong>.
+                      Generated result will be applied automatically.
+                    </div>
+                    <button
+                      type="button"
+                      className="mt-1 text-[10px] uppercase tracking-wider text-muted-foreground hover:text-foreground"
+                      onClick={() => setUvTargetMaterial("")}
+                      data-testid="texlab-uv-clear"
+                    >
+                      Clear UV target
+                    </button>
+                  </div>
+                )}
                 <div
                   className="aspect-square rounded-lg border border-dashed border-border/80 flex items-center justify-center overflow-hidden bg-black/30 relative"
                   onDragOver={(e) => e.preventDefault()}

@@ -1,26 +1,34 @@
 [
   {
-    "content": "Review current VRMViewer.jsx camera centering logic",
+    "content": "Explore current materials/texture pipeline (backend + frontend)",
     "status": "completed"
   },
   {
-    "content": "Locate test VRM file used for testing",
+    "content": "Add UV template extraction utility (per-material UV wireframe + current diffuse)",
     "status": "completed"
   },
   {
-    "content": "Rewrite camera targeting/fit-to-frame math cleanly",
+    "content": "Add material auto-classification (face/hair/top/bottom/skin/other)",
     "status": "completed"
   },
   {
-    "content": "Screenshot verification of fix",
+    "content": "Add texture 2D transform controls (offset/repeat/rotation)",
     "status": "completed"
   },
   {
-    "content": "Run testing_agent_v3 to verify centering fix",
+    "content": "Add original-texture restore/undo per material",
     "status": "completed"
   },
   {
-    "content": "Move on to improve AI texture UV mapping",
+    "content": "Wire new UV Fit workflow into MaterialsPanel UI (with guided presets)",
+    "status": "completed"
+  },
+  {
+    "content": "Wire UV template as reference image for Nano Banana texture gen",
+    "status": "completed"
+  },
+  {
+    "content": "Frontend testing_agent_v3 verification for UV workflow",
     "status": "in_progress"
   }
 ]

@@ -93,10 +93,24 @@ async def generate_texture(prompt: str, kind: str = "texture") -> dict:
 
 
 async def generate_variant(prompt: str, ref_image_b64: str) -> dict:
-    full = (
-        f"Using the character in the provided reference image, redraw with this change: {prompt}. "
-        f"Preserve face, hair color, eye color and outfit identity. Clean neutral background. {STYLE_TAIL}"
-    )
+    """Reference-conditioned generation. Behaviour is driven by the user's prompt:
+    - Character re-illustration: prompt naturally mentions the character
+    - UV template repaint: prompt mentions "UV", "layout", "seams", "boundaries"
+    We stay prompt-following and let the user drive intent."""
+    lower = (prompt or "").lower()
+    is_uv_repaint = any(t in lower for t in ("uv", "seams", "layout", "boundaries", "wireframe"))
+    if is_uv_repaint:
+        full = (
+            f"Follow the reference image STRICTLY as a UV / layout template. "
+            f"Repaint every region inside the seams shown in the reference, keeping the exact "
+            f"boundaries, aspect ratio and framing. User instructions: {prompt}. "
+            f"No text, no watermarks, no borders added. {STYLE_TAIL}"
+        )
+    else:
+        full = (
+            f"Using the character in the provided reference image, redraw with this change: {prompt}. "
+            f"Preserve face, hair color, eye color and outfit identity. Clean neutral background. {STYLE_TAIL}"
+        )
     images = await _image_call(full, ref_b64=ref_image_b64)
     return {"prompt": full, "images": images}
 
