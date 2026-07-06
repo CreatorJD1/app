@@ -10,6 +10,7 @@ import { TextureLabDialog } from "@/components/dialogs/TextureLabDialog";
 import { ReferenceStudioDialog } from "@/components/dialogs/ReferenceStudioDialog";
 import { ProjectsDialog } from "@/components/dialogs/ProjectsDialog";
 import { SettingsDrawer } from "@/components/dialogs/SettingsDrawer";
+import { CharacterAnalyzerDialog } from "@/components/dialogs/CharacterAnalyzerDialog";
 import { useStudioStore } from "@/store/studioStore";
 
 export default function StudioPage() {
@@ -17,28 +18,29 @@ export default function StudioPage() {
   const setTextureLabOpen = useStudioStore((s) => s.setTextureLabOpen);
   const setReferenceStudioOpen = useStudioStore((s) => s.setReferenceStudioOpen);
   const setProjectsOpen = useStudioStore((s) => s.setProjectsOpen);
+  const setAnalyzerOpen = useStudioStore((s) => s.setAnalyzerOpen);
   const requestScreenshot = useStudioStore((s) => s.requestScreenshot);
 
-  // Keyboard shortcuts
   useEffect(() => {
     const onKey = (e) => {
       const tag = (e.target?.tagName || "").toLowerCase();
       if (["input", "textarea"].includes(tag) || e.target?.isContentEditable) return;
       if (e.metaKey || e.ctrlKey || e.altKey) return;
-      if (e.key.toLowerCase() === "g") setTextureLabOpen(true);
-      else if (e.key.toLowerCase() === "r") setReferenceStudioOpen(true);
-      else if (e.key.toLowerCase() === "p") setProjectsOpen(true);
-      else if (e.key.toLowerCase() === "s") requestScreenshot();
+      const k = e.key.toLowerCase();
+      if (k === "g") setTextureLabOpen(true);
+      else if (k === "r") setReferenceStudioOpen(true);
+      else if (k === "p") setProjectsOpen(true);
+      else if (k === "a") setAnalyzerOpen(true);
+      else if (k === "s") requestScreenshot();
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [setTextureLabOpen, setReferenceStudioOpen, setProjectsOpen, requestScreenshot]);
+  }, [setTextureLabOpen, setReferenceStudioOpen, setProjectsOpen, setAnalyzerOpen, requestScreenshot]);
 
   useEffect(() => {
-    // Welcome toast
     const t = setTimeout(() => {
       toast("Welcome to VRoid Companion Studio", {
-        description: "Import a .vrm to start. Try Texture Lab (G) or Reference Studio (R).",
+        description: "Import a .vrm or open Character Analyzer (A) to convert reference art → VRoid recipe.",
       });
     }, 500);
     return () => clearTimeout(t);
@@ -48,7 +50,6 @@ export default function StudioPage() {
     <div className="h-screen w-screen bg-background text-foreground overflow-hidden font-body">
       <div className="flex h-full">
         <ToolRail />
-
         <div className="flex-1 min-w-0">
           <ResizablePanelGroup direction="horizontal" className="h-full">
             <ResizablePanel defaultSize={72} minSize={40} className="relative">
@@ -67,10 +68,10 @@ export default function StudioPage() {
         </div>
       </div>
 
-      {/* Dialogs / Drawers */}
       <TextureLabDialog />
       <ReferenceStudioDialog />
       <ProjectsDialog />
+      <CharacterAnalyzerDialog />
       <SettingsDrawer />
     </div>
   );

@@ -10,25 +10,25 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-# MongoDB connection
 mongo_url = os.environ["MONGO_URL"]
 client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get("DB_NAME", "vroid_companion")]
 
 app = FastAPI(title="VRoid Companion Studio", version="1.0.0")
 
-# Configure logging
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s - %(name)s - %(levelname)s - %(message)s",
 )
 logger = logging.getLogger("vcs.server")
 
-# Import routes AFTER app + db exist, then wire them up
 from routes import router as api_router, init as init_routes  # noqa: E402
+from vroid_hub import router as hub_router, init as init_hub  # noqa: E402
 
 init_routes(db)
+init_hub(db)
 app.include_router(api_router)
+app.include_router(hub_router)
 
 app.add_middleware(
     CORSMiddleware,
@@ -42,7 +42,6 @@ app.add_middleware(
 @app.on_event("startup")
 async def startup_event():
     logger.info("VRoid Companion Studio API started (db=%s)", db.name)
-    # Ensure indexes
     await db.projects.create_index("id", unique=True)
     await db.assets.create_index("id", unique=True)
     await db.assets.create_index("project_id")

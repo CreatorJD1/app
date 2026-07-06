@@ -1,38 +1,42 @@
 [
   {
-    "content": "Phase 1: Get Gemini Nano Banana integration playbook",
+    "content": "P3: Pose safety - anatomical limits + clamp + safety toggle",
     "status": "completed"
   },
   {
-    "content": "Phase 1: Create POC script proving anime texture, image-to-image, and turnaround generation",
+    "content": "P3: Extended animation prefabs (idle_soft/cheer/kpop/run/jump/bow/hands-on-hips/thinking/peace)",
     "status": "completed"
   },
   {
-    "content": "Phase 1: Run POC and fix until successful",
+    "content": "P3: Procedural animation editor - keyframe record/play/loop",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Get design guidelines from design_agent",
+    "content": "P3: Wardrobe & Accessories tabs (auto coordinated outfits + accessories)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Build backend (FastAPI endpoints for AI gen, projects, VRM metadata)",
+    "content": "P3: Poly subdivision (Loop) with Settings toggle + Apply",
     "status": "completed"
   },
   {
-    "content": "Phase 2: Build frontend (VRM viewer, animation, expressions, texture lab, reference studio)",
+    "content": "P3: 8K/4K/2K progressive upscale button per asset",
     "status": "completed"
   },
   {
-    "content": "Phase 2: All user stories covered in development",
+    "content": "P3: Character Analyzer (reference → VRoid recipe via Gemini vision)",
     "status": "completed"
   },
   {
-    "content": "Phase 2: End-to-end testing using testing_agent_v3",
+    "content": "P3: VRoid Hub URL import (server proxy)",
     "status": "completed"
   },
   {
-    "content": "Bug fix: VRM facing away from camera + auto-frame + face artifacts",
+    "content": "P3: Backend wardrobe/accessories/analyze/upscale/hub endpoints",
     "status": "completed"
+  },
+  {
+    "content": "P3: End-to-end testing via testing_agent",
+    "status": "in_progress"
   }
 ]

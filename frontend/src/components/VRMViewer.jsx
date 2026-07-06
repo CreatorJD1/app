@@ -12,6 +12,7 @@ import {
   applyBoneOffsets,
 } from "@/lib/vrmLoader";
 import { applyClip, applyAutoBlink } from "@/lib/vrmAnimations";
+import { subdivideVRM, restoreVRM } from "@/lib/subdivide";
 
 const LIGHTING = {
   studio: [
@@ -141,7 +142,7 @@ export const VRMViewer = () => {
       controls.update();
       if (ref.vrm) {
         // 1) apply base procedural clip (resets rotations first)
-        applyClip(ref.vrm, s.animationClip, t, s.animationSpeed);
+        applyClip(ref.vrm, s.animationClip, t, s.animationSpeed, { customFrames: s.customFrames });
         // 2) apply user bone offsets on top
         applyBoneOffsets(ref.vrm, s.boneOffsets);
         // 3) apply expressions from store
@@ -266,6 +267,9 @@ export const VRMViewer = () => {
       if (s.screenshotRequest !== prev.screenshotRequest) {
         doScreenshot();
       }
+      if (s.subdivideRequest !== prev.subdivideRequest) {
+        applySubdivision();
+      }
     });
     // Initial background
     const cur = useStudioStore.getState();
@@ -316,6 +320,20 @@ export const VRMViewer = () => {
     a.download = `vcs-shot-${Date.now()}.png`;
     a.click();
     toast.success("Screenshot saved");
+  };
+
+  const applySubdivision = () => {
+    const ref = stateRef.current;
+    if (!ref.vrm) return toast.error("No VRM loaded");
+    const level = useStudioStore.getState().subdivisionLevel;
+    // Always restore first to work from originals
+    restoreVRM(ref.vrm);
+    if (level > 0) {
+      const { changed, skipped } = subdivideVRM(ref.vrm, level);
+      toast.success(`Subdivision applied (level ${level})`, { description: `${changed} meshes subdivided, ${skipped} skipped` });
+    } else {
+      toast.info("Subdivision cleared");
+    }
   };
 
   return (

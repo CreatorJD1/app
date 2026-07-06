@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-07-06T02:36:52.363534",
+  "passed": 6,
+  "total": 6,
+  "success_rate": "100.0%",
+  "results": [
+    {
+      "test": "VRoid Hub Help",
+      "passed": true,
+      "status_code": 200,
+      "message": "sdk_unity_only key present: The official VRoid SDK is a Unity C# package \u2014 it cannot run inside a browser. W...",
+      "details": null
+    },
+    {
+      "test": "VRoid Hub Import Reject",
+      "passed": true,
+      "status_code": 400,
+      "message": "Correctly rejected: URL host not allowed. Allowed hosts: hub.vroid.com, assets.vroid.com, cdn.vroid.com, vroid-hub.imgix",
+      "details": null
+    },
+    {
+      "test": "Character Analyzer",
+      "passed": true,
+      "status_code": 200,
+      "message": "Analysis returned with all keys: ['identity', 'face', 'eyes', 'hair', 'outfit', 'vroid_recipe']",
+      "details": null
+    },
+    {
+      "test": "Generate Wardrobe",
+      "passed": true,
+      "status_code": 200,
+      "message": "Generated 2/2 wardrobe items with saved assets",
+      "details": null
+    },
+    {
+      "test": "Generate Accessories",
+      "passed": true,
+      "status_code": 200,
+      "message": "Generated 1 accessory item with saved asset",
+      "details": null
+    },
+    {
+      "test": "Save Upscale",
+      "passed": true,
+      "status_code": 200,
+      "message": "Saved upscale asset with ID: b9e01825-93b1-41d1-b682-9787e97e63dd",
+      "details": null
+    }
+  ]
+}

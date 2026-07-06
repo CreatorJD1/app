@@ -1,45 +1,30 @@
 import { create } from "zustand";
 
 export const useStudioStore = create((set, get) => ({
-  // Project
   project: null,
   setProject: (project) => set({ project }),
 
-  // VRM state
   vrmUrl: null,
   vrmFilename: null,
   setVrm: (vrmUrl, vrmFilename) => set({ vrmUrl, vrmFilename }),
   clearVrm: () => set({ vrmUrl: null, vrmFilename: null }),
 
-  // Expression values (0..1) e.g. {happy: 0.5, blink: 0.2}
   expressions: {},
-  setExpression: (name, value) =>
-    set((s) => ({ expressions: { ...s.expressions, [name]: value } })),
+  setExpression: (name, value) => set((s) => ({ expressions: { ...s.expressions, [name]: value } })),
   resetExpressions: () => set({ expressions: {} }),
-
-  // Available expression names discovered from loaded VRM
   availableExpressions: [],
   setAvailableExpressions: (list) => set({ availableExpressions: list }),
-
-  // Available materials discovered from loaded VRM
-  availableMaterials: [], // [{name, uuid}]
+  availableMaterials: [],
   setAvailableMaterials: (list) => set({ availableMaterials: list }),
 
-  // Material assignments (materialName -> assetId + dataUrl)
   materialAssignments: {},
   assignMaterial: (materialName, asset) =>
-    set((s) => ({
-      materialAssignments: { ...s.materialAssignments, [materialName]: asset },
-    })),
+    set((s) => ({ materialAssignments: { ...s.materialAssignments, [materialName]: asset } })),
   clearMaterialAssignment: (materialName) =>
-    set((s) => {
-      const next = { ...s.materialAssignments };
-      delete next[materialName];
-      return { materialAssignments: next };
-    }),
+    set((s) => { const next = { ...s.materialAssignments }; delete next[materialName]; return { materialAssignments: next }; }),
 
-  // Animation state
-  animationClip: "idle", // idle | wave | dance | walk | sit | none
+  // Animation
+  animationClip: "idle",
   setAnimationClip: (clip) => set({ animationClip: clip }),
   animationSpeed: 1.0,
   setAnimationSpeed: (v) => set({ animationSpeed: v }),
@@ -48,8 +33,8 @@ export const useStudioStore = create((set, get) => ({
   lookAtMouse: true,
   setLookAtMouse: (v) => set({ lookAtMouse: v }),
 
-  // Bone rotations (radians) for pose editing
-  boneOffsets: {}, // {boneName: {x,y,z}}
+  // Pose
+  boneOffsets: {},
   setBoneOffset: (bone, axis, value) =>
     set((s) => ({
       boneOffsets: {
@@ -57,22 +42,59 @@ export const useStudioStore = create((set, get) => ({
         [bone]: { ...(s.boneOffsets[bone] || { x: 0, y: 0, z: 0 }), [axis]: value },
       },
     })),
+  setBoneOffsetFull: (bone, off) =>
+    set((s) => ({ boneOffsets: { ...s.boneOffsets, [bone]: { ...off } } })),
   resetBoneOffsets: () => set({ boneOffsets: {} }),
+  poseSafetyEnabled: true,
+  setPoseSafetyEnabled: (v) => set({ poseSafetyEnabled: v }),
 
-  // Lighting / camera
-  lightingPreset: "studio", // studio | soft | rim | sunset
+  // Procedural animation keyframes
+  customFrames: [], // [{id, time, boneOffsets, expressions}]
+  addKeyframe: (time) =>
+    set((s) => {
+      const kf = {
+        id: `kf-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        time,
+        boneOffsets: JSON.parse(JSON.stringify(s.boneOffsets || {})),
+        expressions: { ...(s.expressions || {}) },
+      };
+      return { customFrames: [...s.customFrames, kf].sort((a, b) => a.time - b.time) };
+    }),
+  removeKeyframe: (id) => set((s) => ({ customFrames: s.customFrames.filter((k) => k.id !== id) })),
+  clearKeyframes: () => set({ customFrames: [] }),
+  updateKeyframeTime: (id, newTime) =>
+    set((s) => ({
+      customFrames: s.customFrames
+        .map((k) => (k.id === id ? { ...k, time: newTime } : k))
+        .sort((a, b) => a.time - b.time),
+    })),
+  applyKeyframeToScene: (id) => {
+    const kf = get().customFrames.find((k) => k.id === id);
+    if (!kf) return;
+    set({ boneOffsets: JSON.parse(JSON.stringify(kf.boneOffsets || {})), expressions: { ...(kf.expressions || {}) } });
+  },
+
+  // Lighting
+  lightingPreset: "studio",
   setLightingPreset: (v) => set({ lightingPreset: v }),
-  background: "gradient", // gradient | color | transparent
+  background: "gradient",
   setBackground: (v) => set({ background: v }),
   backgroundColor: "#0F1318",
   setBackgroundColor: (v) => set({ backgroundColor: v }),
 
-  // Recent assets in current session
-  recentAssets: [],
-  addRecentAsset: (asset) =>
-    set((s) => ({ recentAssets: [asset, ...s.recentAssets].slice(0, 40) })),
+  // HQ / subdivision
+  subdivisionLevel: 0, // 0 = off, 1 or 2 = iterations
+  setSubdivisionLevel: (v) => set({ subdivisionLevel: v }),
+  subdivideRequest: 0,
+  requestSubdivideApply: () => set((s) => ({ subdivideRequest: s.subdivideRequest + 1 })),
 
-  // UI state
+  // Recent assets
+  recentAssets: [],
+  addRecentAsset: (asset) => set((s) => ({ recentAssets: [asset, ...s.recentAssets].slice(0, 60) })),
+  bumpAssets: 0,
+  bumpAssetsList: () => set((s) => ({ bumpAssets: s.bumpAssets + 1 })),
+
+  // UI
   isTextureLabOpen: false,
   setTextureLabOpen: (v) => set({ isTextureLabOpen: v }),
   isReferenceStudioOpen: false,
@@ -81,8 +103,9 @@ export const useStudioStore = create((set, get) => ({
   setProjectsOpen: (v) => set({ isProjectsOpen: v }),
   isSettingsOpen: false,
   setSettingsOpen: (v) => set({ isSettingsOpen: v }),
+  isAnalyzerOpen: false,
+  setAnalyzerOpen: (v) => set({ isAnalyzerOpen: v }),
 
-  // Screenshot request (increments to trigger snap)
   screenshotRequest: 0,
   requestScreenshot: () => set((s) => ({ screenshotRequest: s.screenshotRequest + 1 })),
 }));

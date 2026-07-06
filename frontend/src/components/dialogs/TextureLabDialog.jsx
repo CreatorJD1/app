@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { toast } from "sonner";
-import { Sparkles, ImagePlus, Wand2, Upload, RefreshCw, X, Check } from "lucide-react";
+import { Sparkles, ImagePlus, Wand2, Upload, RefreshCw, X, Check, ZoomIn, Shirt } from "lucide-react";
 import {
   Dialog,
   DialogContent,
@@ -24,6 +24,7 @@ import { Skeleton } from "@/components/ui/skeleton";
 import { useStudioStore } from "@/store/studioStore";
 import { api } from "@/lib/api";
 import { applyTextureToMaterial } from "@/lib/vrmLoader";
+import { upscaleImage, UPSCALE_PRESETS } from "@/lib/upscaler";
 
 const TEXTURE_KINDS = [
   { id: "texture", label: "Clothing / Cloth", prompt: "An anime clothing fabric texture, seamless tileable, cel-shaded" },
@@ -155,6 +156,8 @@ export const TextureLabDialog = () => {
         <Tabs defaultValue="prompt" className="flex-1 flex flex-col min-h-0">
           <TabsList>
             <TabsTrigger value="prompt" data-testid="texlab-tab-prompt">From Prompt</TabsTrigger>
+            <TabsTrigger value="wardrobe" data-testid="texlab-tab-wardrobe">Wardrobe</TabsTrigger>
+            <TabsTrigger value="accessories" data-testid="texlab-tab-accessories">Accessories</TabsTrigger>
             <TabsTrigger value="reference" data-testid="texlab-tab-reference">From Reference</TabsTrigger>
             <TabsTrigger value="library" data-testid="texlab-tab-library">Library</TabsTrigger>
           </TabsList>
@@ -300,6 +303,16 @@ export const TextureLabDialog = () => {
               />
             </div>
           </TabsContent>
+
+          {/* Wardrobe */}
+          <TabsContent value="wardrobe" className="flex-1 min-h-0 mt-2">
+            <WardrobeTab onGenerated={(items) => { setAssets((a) => [...items.filter(Boolean), ...a]); loadAssets(); }} />
+          </TabsContent>
+
+          {/* Accessories */}
+          <TabsContent value="accessories" className="flex-1 min-h-0 mt-2">
+            <AccessoriesTab onGenerated={(items) => { setAssets((a) => [...items.filter(Boolean), ...a]); loadAssets(); }} />
+          </TabsContent>
         </Tabs>
       </DialogContent>
     </Dialog>
@@ -328,10 +341,51 @@ const ResultsGrid = ({ assets, pendingCount, materials, onApply, showAll = false
 
 const AssetCard = ({ asset, materials, onApply }) => {
   const [selectMat, setSelectMat] = useState("");
+  const [upscaling, setUpscaling] = useState(false);
+  const project = useStudioStore((s) => s.project);
+  const addRecentAsset = useStudioStore((s) => s.addRecentAsset);
+  const bumpAssets = useStudioStore((s) => s.bumpAssetsList);
+
+  const doUpscale = async (target) => {
+    setUpscaling(true);
+    try {
+      toast.info(`Upscaling to ${target}px...`);
+      const { dataUrl, width, height } = await upscaleImage(asset.data_url, target);
+      const { asset: saved } = await api.saveUpscale({
+        source_asset_id: asset.id,
+        data_url: dataUrl,
+        width, height,
+        label: `${target}px`,
+        project_id: project?.id || null,
+      });
+      addRecentAsset(saved);
+      bumpAssets();
+      toast.success(`Upscaled to ${width}\u00d7${height}`);
+    } catch (e) {
+      toast.error("Upscale failed", { description: String(e?.message || e) });
+    } finally {
+      setUpscaling(false);
+    }
+  };
+
   return (
     <div className="rounded-lg border border-border/60 overflow-hidden group" data-testid={`asset-card-${asset.id}`}>
-      <div className="aspect-square overflow-hidden bg-black/40">
+      <div className="aspect-square overflow-hidden bg-black/40 relative">
         <img src={asset.data_url} alt="" className="h-full w-full object-cover group-hover:scale-[1.03] transition-transform" />
+        <div className="absolute top-1 right-1 flex gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+          {UPSCALE_PRESETS.map((p) => (
+            <button
+              key={p.id}
+              disabled={upscaling}
+              onClick={() => doUpscale(p.id)}
+              className="text-[9px] font-mono px-1.5 py-0.5 rounded bg-black/70 border border-white/10 hover:border-primary/60 hover:text-primary"
+              title={`Upscale to ${p.label}`}
+              data-testid={`upscale-${asset.id}-${p.id}`}
+            >
+              {p.id >= 8192 ? "8K" : p.id >= 4096 ? "4K" : "2K"}
+            </button>
+          ))}
+        </div>
       </div>
       <div className="p-2 space-y-1.5 bg-card/60">
         <div className="text-[10px] font-mono text-muted-foreground uppercase">{asset.kind}{asset.subkind ? ` · ${asset.subkind}` : ""}</div>
@@ -358,6 +412,169 @@ const AssetCard = ({ asset, materials, onApply }) => {
           </div>
         )}
       </div>
+    </div>
+  );
+};
+
+
+const WARDROBE_THEMES = [
+  "school uniform seifuku set, navy + white",
+  "cyberpunk street outfit, black + neon teal",
+  "gothic lolita, black + lace",
+  "magical girl, pastel pink + gold",
+  "streetwear hoodie set, ivory + electric blue",
+  "kimono festival outfit, red + gold",
+];
+
+const WardrobeTab = ({ onGenerated }) => {
+  const project = useStudioStore((s) => s.project);
+  const [theme, setTheme] = useState(WARDROBE_THEMES[0]);
+  const [palette, setPalette] = useState("navy and white");
+  const [pieces, setPieces] = useState(["tops", "bottoms", "shoes", "outerwear"]);
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState([]);
+
+  const togglePiece = (p) => setPieces((s) => s.includes(p) ? s.filter((x) => x !== p) : [...s, p]);
+
+  const doGen = async () => {
+    if (!theme.trim()) return toast.error("Enter a theme");
+    setBusy(true);
+    setResults([]);
+    try {
+      const r = await api.generateWardrobe({ theme, palette, pieces, project_id: project?.id || null });
+      setResults(r.items || []);
+      onGenerated((r.items || []).filter((i) => i.asset).map((i) => i.asset));
+      toast.success(`Wardrobe ready (${(r.items || []).filter((i) => i.asset).length}/${(r.items || []).length})`);
+    } catch (e) {
+      toast.error("Failed", { description: e?.response?.data?.detail || String(e?.message || e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-[380px_1fr] gap-4 h-full">
+      <div className="space-y-3 overflow-auto pr-2">
+        <div>
+          <div className="text-xs text-muted-foreground mb-1">Outfit theme</div>
+          <Textarea data-testid="wardrobe-theme" className="min-h-[80px] font-mono text-xs" value={theme} onChange={(e) => setTheme(e.target.value)} />
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground mb-1">Color palette</div>
+          <Input data-testid="wardrobe-palette" value={palette} onChange={(e) => setPalette(e.target.value)} />
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground mb-1">Pieces (auto-generated)</div>
+          <div className="flex flex-wrap gap-1.5">
+            {["tops", "bottoms", "shoes", "outerwear", "onepiece", "accessory"].map((p) => (
+              <button key={p} data-testid={`wardrobe-piece-${p}`} onClick={() => togglePiece(p)}
+                className={`text-[11px] rounded-full border px-2.5 py-1 transition-colors ${
+                  pieces.includes(p) ? "border-primary/60 text-primary bg-primary/10" : "border-border/70"
+                }`}>
+                {p}
+              </button>
+            ))}
+          </div>
+        </div>
+        <div>
+          <div className="text-[11px] text-muted-foreground mb-1">Quick themes</div>
+          <div className="flex flex-wrap gap-1.5">
+            {WARDROBE_THEMES.map((t) => (
+              <button key={t} onClick={() => setTheme(t)} className="text-[11px] rounded-full border border-border/70 px-2.5 py-1 hover:border-primary/50 hover:text-primary">{t.slice(0, 32)}...</button>
+            ))}
+          </div>
+        </div>
+        <Button data-testid="wardrobe-generate" onClick={doGen} disabled={busy || !pieces.length} className="w-full">
+          <Shirt size={14} className="mr-1.5" /> {busy ? "Generating..." : `Generate Wardrobe (${pieces.length})`}
+        </Button>
+      </div>
+      <ScrollArea className="h-full min-h-0">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 pr-2 pb-4">
+          {busy && Array.from({ length: pieces.length || 4 }).map((_, i) => <Skeleton key={i} className="aspect-square rounded-lg" />)}
+          {results.map((r, i) => (
+            <div key={i} className="rounded-lg border border-border/60 overflow-hidden">
+              <div className="aspect-square bg-black/40 overflow-hidden">
+                {r.asset ? <img src={r.asset.data_url} alt={r.piece} className="h-full w-full object-cover" /> : <div className="h-full grid place-items-center text-[10px] text-destructive p-2 text-center">Failed</div>}
+              </div>
+              <div className="p-2 text-[10px] font-mono uppercase text-muted-foreground">{r.piece}</div>
+            </div>
+          ))}
+          {!busy && results.length === 0 && (
+            <div className="col-span-full text-xs text-muted-foreground py-8 text-center">
+              Pick a theme + pieces and generate a coordinated outfit set.
+            </div>
+          )}
+        </div>
+      </ScrollArea>
+    </div>
+  );
+};
+
+const ACCESSORY_KINDS = ["hair_accessory", "earring", "necklace", "glasses", "tail", "wings"];
+
+const AccessoriesTab = ({ onGenerated }) => {
+  const project = useStudioStore((s) => s.project);
+  const [theme, setTheme] = useState("kawaii pastel accessories with ribbons");
+  const [kinds, setKinds] = useState(["hair_accessory", "earring", "necklace"]);
+  const [busy, setBusy] = useState(false);
+  const [results, setResults] = useState([]);
+
+  const toggleKind = (k) => setKinds((s) => s.includes(k) ? s.filter((x) => x !== k) : [...s, k]);
+
+  const doGen = async () => {
+    if (!kinds.length) return toast.error("Pick at least one accessory kind");
+    setBusy(true);
+    setResults([]);
+    try {
+      const r = await api.generateAccessories({ theme, kinds, project_id: project?.id || null });
+      setResults(r.items || []);
+      onGenerated((r.items || []).filter((i) => i.asset).map((i) => i.asset));
+      toast.success(`Accessories ready (${(r.items || []).filter((i) => i.asset).length}/${(r.items || []).length})`);
+    } catch (e) {
+      toast.error("Failed", { description: e?.response?.data?.detail || String(e?.message || e) });
+    } finally {
+      setBusy(false);
+    }
+  };
+
+  return (
+    <div className="grid grid-cols-[380px_1fr] gap-4 h-full">
+      <div className="space-y-3 overflow-auto pr-2">
+        <div>
+          <div className="text-xs text-muted-foreground mb-1">Style theme</div>
+          <Textarea data-testid="accessory-theme" className="min-h-[80px] font-mono text-xs" value={theme} onChange={(e) => setTheme(e.target.value)} />
+        </div>
+        <div>
+          <div className="text-xs text-muted-foreground mb-1">Kinds</div>
+          <div className="flex flex-wrap gap-1.5">
+            {ACCESSORY_KINDS.map((k) => (
+              <button key={k} data-testid={`accessory-kind-${k}`} onClick={() => toggleKind(k)}
+                className={`text-[11px] rounded-full border px-2.5 py-1 ${kinds.includes(k) ? "border-primary/60 text-primary bg-primary/10" : "border-border/70"}`}>
+                {k.replace("_", " ")}
+              </button>
+            ))}
+          </div>
+        </div>
+        <Button data-testid="accessory-generate" onClick={doGen} disabled={busy || !kinds.length} className="w-full">
+          <Sparkles size={14} className="mr-1.5" /> {busy ? "Generating..." : `Generate ${kinds.length} accessories`}
+        </Button>
+      </div>
+      <ScrollArea className="h-full min-h-0">
+        <div className="grid grid-cols-2 md:grid-cols-3 gap-2 pr-2 pb-4">
+          {busy && kinds.map((k, i) => <Skeleton key={i} className="aspect-square rounded-lg" />)}
+          {results.map((r, i) => (
+            <div key={i} className="rounded-lg border border-border/60 overflow-hidden">
+              <div className="aspect-square bg-black/40 overflow-hidden">
+                {r.asset ? <img src={r.asset.data_url} alt={r.kind} className="h-full w-full object-cover" /> : <div className="h-full grid place-items-center text-[10px] text-destructive p-2 text-center">Failed</div>}
+              </div>
+              <div className="p-2 text-[10px] font-mono uppercase text-muted-foreground">{r.kind.replace("_", " ")}</div>
+            </div>
+          ))}
+          {!busy && results.length === 0 && (
+            <div className="col-span-full text-xs text-muted-foreground py-8 text-center">Pick kinds and generate matching accessories.</div>
+          )}
+        </div>
+      </ScrollArea>
     </div>
   );
 };

@@ -1,26 +1,22 @@
 """API routes for VRoid Companion Studio."""
 from __future__ import annotations
 
-import base64
 import logging
-import os
 import re
 from pathlib import Path
 from typing import List, Optional
 
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import APIRouter, HTTPException, UploadFile, File
+from fastapi.responses import FileResponse
+from pydantic import BaseModel
 
-from ai_service import generate_texture, generate_concept, generate_variant, generate_turnaround
+from ai_service import (
+    generate_texture, generate_concept, generate_variant, generate_turnaround,
+    generate_wardrobe, generate_accessories, analyze_character,
+)
 from models import (
-    Asset,
-    Project,
-    ProjectCreate,
-    ProjectUpdate,
-    TextureRequest,
-    ConceptRequest,
-    VariantRequest,
-    TurnaroundRequest,
+    Asset, Project, ProjectCreate, ProjectUpdate,
+    TextureRequest, ConceptRequest, VariantRequest, TurnaroundRequest,
     now_iso,
 )
 
@@ -32,8 +28,6 @@ STORAGE_DIR.mkdir(exist_ok=True)
 VRM_DIR.mkdir(exist_ok=True)
 
 router = APIRouter(prefix="/api")
-
-# Dependencies injected from server.py
 _db = None
 
 
@@ -46,17 +40,12 @@ def _image_to_data_url(img: dict) -> str:
     return f"data:{img['mime_type']};base64,{img['data_b64']}"
 
 
-async def _save_asset(project_id: Optional[str], kind: str, subkind: Optional[str], prompt: str, img: dict) -> Asset:
+async def _save_asset(project_id, kind, subkind, prompt, img) -> Asset:
     asset = Asset(
-        project_id=project_id,
-        kind=kind,
-        subkind=subkind,
-        prompt=prompt,
-        mime_type=img["mime_type"],
-        data_url=_image_to_data_url(img),
+        project_id=project_id, kind=kind, subkind=subkind, prompt=prompt,
+        mime_type=img["mime_type"], data_url=_image_to_data_url(img),
     )
-    doc = asset.model_dump()
-    await _db.assets.insert_one(doc)
+    await _db.assets.insert_one(asset.model_dump())
     return asset
 
 
@@ -65,13 +54,20 @@ async def _get_asset(asset_id: str) -> Optional[Asset]:
     return Asset(**doc) if doc else None
 
 
-# -------------------- Health --------------------
+def _extract_b64(data_url: str) -> str:
+    if not data_url:
+        return ""
+    if "," in data_url:
+        return data_url.split(",", 1)[1]
+    return data_url
+
+
 @router.get("/")
 async def root():
     return {"app": "VRoid Companion Studio", "status": "ok"}
 
 
-# -------------------- Generation --------------------
+# ---------- Generation ----------
 @router.post("/generate/texture")
 async def api_generate_texture(req: TextureRequest):
     try:
@@ -88,18 +84,9 @@ async def api_generate_concept(req: ConceptRequest):
     try:
         result = await generate_concept(req.prompt)
     except Exception as e:
-        logger.exception("generate_concept failed")
         raise HTTPException(status_code=502, detail=f"Generation failed: {e}")
     asset = await _save_asset(req.project_id, "concept", None, result["prompt"], result["images"][0])
     return {"asset": asset.model_dump()}
-
-
-def _extract_b64(data_url: str) -> str:
-    if not data_url:
-        return ""
-    if "," in data_url:
-        return data_url.split(",", 1)[1]
-    return data_url
 
 
 @router.post("/generate/variant")
@@ -117,7 +104,6 @@ async def api_generate_variant(req: VariantRequest):
     try:
         result = await generate_variant(req.prompt, ref_b64)
     except Exception as e:
-        logger.exception("generate_variant failed")
         raise HTTPException(status_code=502, detail=f"Generation failed: {e}")
     asset = await _save_asset(req.project_id, "variant", None, result["prompt"], result["images"][0])
     return {"asset": asset.model_dump()}
@@ -132,13 +118,10 @@ async def api_generate_turnaround(req: TurnaroundRequest):
             ref_b64 = _extract_b64(ref.data_url)
     elif req.reference_data_url:
         ref_b64 = _extract_b64(req.reference_data_url)
-
     try:
         result = await generate_turnaround(req.character_desc, ref_image_b64=ref_b64)
     except Exception as e:
-        logger.exception("generate_turnaround failed")
         raise HTTPException(status_code=502, detail=f"Generation failed: {e}")
-
     saved_panels = []
     for panel in result["panels"]:
         if "image" in panel:
@@ -149,7 +132,100 @@ async def api_generate_turnaround(req: TurnaroundRequest):
     return {"character_desc": req.character_desc, "panels": saved_panels}
 
 
-# -------------------- Assets --------------------
+# ---------- Wardrobe (coordinated outfit) ----------
+class WardrobeRequest(BaseModel):
+    theme: str
+    palette: str = "pastel pink and lavender"
+    pieces: Optional[List[str]] = None
+    project_id: Optional[str] = None
+
+
+@router.post("/generate/wardrobe")
+async def api_generate_wardrobe(req: WardrobeRequest):
+    try:
+        result = await generate_wardrobe(req.theme, req.palette, req.pieces)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Generation failed: {e}")
+    saved = []
+    for item in result["items"]:
+        if "image" in item:
+            asset = await _save_asset(req.project_id, "texture", item["piece"], item["prompt"], item["image"])
+            saved.append({"piece": item["piece"], "asset": asset.model_dump()})
+        else:
+            saved.append({"piece": item["piece"], "error": item.get("error")})
+    return {"theme": req.theme, "palette": req.palette, "items": saved}
+
+
+# ---------- Accessories bundle ----------
+class AccessoriesRequest(BaseModel):
+    theme: str
+    kinds: Optional[List[str]] = None
+    project_id: Optional[str] = None
+
+
+@router.post("/generate/accessories")
+async def api_generate_accessories(req: AccessoriesRequest):
+    try:
+        result = await generate_accessories(req.theme, req.kinds)
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Generation failed: {e}")
+    saved = []
+    for item in result["items"]:
+        if "image" in item:
+            asset = await _save_asset(req.project_id, "texture", item["kind"], item["prompt"], item["image"])
+            saved.append({"kind": item["kind"], "asset": asset.model_dump()})
+        else:
+            saved.append({"kind": item["kind"], "error": item.get("error")})
+    return {"theme": req.theme, "items": saved}
+
+
+# ---------- Character analyzer (reference art → VRoid recipe) ----------
+class AnalyzeRequest(BaseModel):
+    reference_data_url: str
+    notes: str = ""
+    project_id: Optional[str] = None
+    generate_turnaround: bool = False
+
+
+@router.post("/analyze/character")
+async def api_analyze_character(req: AnalyzeRequest):
+    ref_b64 = _extract_b64(req.reference_data_url)
+    if not ref_b64:
+        raise HTTPException(status_code=400, detail="reference_data_url required")
+    try:
+        result = await analyze_character(ref_b64, req.notes)
+    except Exception as e:
+        logger.exception("analyze_character failed")
+        raise HTTPException(status_code=502, detail=f"Analysis failed: {e}")
+
+    preview_asset = None
+    if result.get("preview_image"):
+        preview_asset = await _save_asset(
+            req.project_id, "concept", "preview", result["analysis"].get("turnaround_prompt", ""), result["preview_image"]
+        )
+
+    # Optionally launch a turnaround gen using the analyzed prompt (extra latency)
+    turnaround_panels = []
+    if req.generate_turnaround and result["analysis"].get("turnaround_prompt"):
+        try:
+            tr = await generate_turnaround(result["analysis"]["turnaround_prompt"], ref_image_b64=ref_b64)
+            for panel in tr["panels"]:
+                if "image" in panel:
+                    asset = await _save_asset(req.project_id, "turnaround", panel["label"], panel["prompt"], panel["image"])
+                    turnaround_panels.append({"label": panel["label"], "asset": asset.model_dump()})
+                else:
+                    turnaround_panels.append({"label": panel["label"], "error": panel.get("error")})
+        except Exception as e:
+            logger.warning("turnaround gen inside analyze failed: %s", e)
+
+    return {
+        "analysis": result["analysis"],
+        "preview_asset": preview_asset.model_dump() if preview_asset else None,
+        "turnaround_panels": turnaround_panels,
+    }
+
+
+# ---------- Assets ----------
 @router.get("/assets")
 async def list_assets(project_id: Optional[str] = None, kind: Optional[str] = None, limit: int = 200):
     query = {}
@@ -176,7 +252,34 @@ async def delete_asset(asset_id: str):
     return {"deleted": res.deleted_count}
 
 
-# -------------------- Projects --------------------
+# ---------- Save upscaled asset (from client) ----------
+class SaveUpscaleRequest(BaseModel):
+    source_asset_id: Optional[str] = None
+    data_url: str
+    width: int
+    height: int
+    label: str = "upscale"
+    project_id: Optional[str] = None
+
+
+@router.post("/assets/save_upscale")
+async def save_upscale(req: SaveUpscaleRequest):
+    if not req.data_url or not req.data_url.startswith("data:"):
+        raise HTTPException(status_code=400, detail="data_url required")
+    mime = req.data_url.split(";")[0].split(":", 1)[-1] or "image/jpeg"
+    asset = Asset(
+        project_id=req.project_id,
+        kind="upscale",
+        subkind=req.label,
+        prompt=f"Upscaled to {req.width}x{req.height}" + (f" (from {req.source_asset_id})" if req.source_asset_id else ""),
+        mime_type=mime,
+        data_url=req.data_url,
+    )
+    await _db.assets.insert_one(asset.model_dump())
+    return {"asset": asset.model_dump()}
+
+
+# ---------- Projects ----------
 @router.get("/projects")
 async def list_projects():
     cursor = _db.projects.find({}, {"_id": 0}).sort("updated_at", -1)
@@ -223,7 +326,7 @@ async def delete_project(project_id: str):
     return {"deleted": True}
 
 
-# -------------------- VRM upload / serve --------------------
+# ---------- VRM upload/download ----------
 _SAFE_NAME = re.compile(r"[^A-Za-z0-9._-]")
 
 
@@ -242,9 +345,7 @@ async def upload_vrm(project_id: str, file: UploadFile = File(...)):
     await _db.projects.update_one(
         {"id": project_id},
         {"$set": {
-            "vrm_filename": safe,
-            "vrm_path": str(dest),
-            "vrm_size_bytes": len(data),
+            "vrm_filename": safe, "vrm_path": str(dest), "vrm_size_bytes": len(data),
             "updated_at": now_iso(),
         }},
     )
