@@ -37,6 +37,8 @@
   - A 4-panel turnaround sheet in one run (or 4 separate images).
 - All outputs saved deterministically with a manifest for later app ingestion.
 
+**Status**: COMPLETE (superseded by full in-app workflow in Phase 2).
+
 ---
 
 ## Phase 2 — V1 App Development (FARM + Web VRM driver)
@@ -48,6 +50,7 @@
 4. As a user, I can generate anime textures in-app and preview/apply them to VRM materials (face/hair/clothes).
 5. As a user, I can save a project (VRM + textures + selected settings) and reload it later.
 6. As a user, when I import a VRM, the character spawns **centered and fully visible** (no cut-off), regardless of avatar height/mesh structure.
+7. As a user, I can apply textures with **UV-accurate alignment workflows** and can rollback to originals.
 
 ### Implementation Steps
 - Repo setup:
@@ -70,21 +73,51 @@
   - Animation mixer + bundled clips.
   - Expression mapping to VRM blendshapes.
   - Material mapping UI (pick VRM material → set baseColorMap to generated texture).
-- **Viewport Reliability / Camera Auto-frame (P0) — COMPLETED**
-  - Clean rewrite of camera targeting math in `frontend/src/components/VRMViewer.jsx`.
-  - Fix root cause: `computeVRMBoundingBox` was accidentally nested inside `makeGradientTexture`, throwing `ReferenceError` and forcing silent fallback to hardcoded camera coords.
-  - Implement robust VRM bounding-box union (per mesh/skinned mesh) and aspect-aware fit-to-frame using both vertical/horizontal FOV.
-  - Verified with **testing_agent_v3**: 12/12 tests passed (centering, full visibility, wave animation, orbit controls, no console errors).
+
+#### Viewport Reliability / Camera Auto-frame (P0) — COMPLETED
+- Clean rewrite of camera targeting math in `frontend/src/components/VRMViewer.jsx`.
+- Fix root cause: `computeVRMBoundingBox` was accidentally nested inside `makeGradientTexture`, throwing `ReferenceError` and forcing silent fallback to hardcoded camera coords.
+- Implement robust VRM bounding-box union (per mesh/skinned mesh) and aspect-aware fit-to-frame using both vertical/horizontal FOV.
+- Verified with **testing_agent_v3**: 12/12 tests passed (centering, full visibility, wave animation, orbit controls, no console errors).
+
+#### UV-Accurate Texture Pipeline (P1) — COMPLETED
+Key deliverables:
+- New `frontend/src/lib/materialUtils.js`:
+  - `classifyMaterial()` + `CATEGORY_ORDER/LABELS`
+  - `extractUvTemplate()` (UV wireframe + optional diffuse underlay → PNG data URL)
+  - `applyTexture()` (supports optional 2D transform)
+  - `updateMaterialTransform()` (live slider updates)
+  - `restoreMaterial()` (rollback to original map)
+- Rewritten `frontend/src/components/panels/MaterialsPanel.jsx`:
+  - Grouped materials: Face/Eyes/Hair/Skin/Tops/Bottoms/Shoes/Outfit/Accessory/Other
+  - Per-material **Fit** controls: offset / repeat / rotation
+  - **UV → Lab** handoff (extracts UV template and opens Texture Lab)
+  - **Save UV** download
+  - **Original** restore per material
+- Store updates (`frontend/src/store/studioStore.js`):
+  - Added `materialTransforms`, `pendingUvReference` handoff + `defaultTransform()`
+- Updated `frontend/src/components/dialogs/TextureLabDialog.jsx`:
+  - Consumes `pendingUvReference`
+  - Shows UV workflow banner and auto-populates variant prompt
+  - Auto-applies generated variant to the source material when UV workflow is active
+- Backend update (`backend/ai_service.py`):
+  - `generate_variant()` now detects UV-preserving prompts (UV/layout/seams/boundaries) and uses a stricter instruction to respect seams.
+
+Verification:
+- Verified with **testing_agent_v3**: 11/11 tests passed (UV→Lab, Save UV, grouping, Fit sliders, clear UV target, regressions).
 
 ### Testing (end of Phase 2)
 - 1 full E2E pass:
   - Upload VRM → render (centered) → play animation → change expressions → generate texture → apply → save project → reload project.
 - Fix until stable (no broken core flows).
 
+**Status**: COMPLETE (P0 camera centering + P1 UV texture pipeline both shipped and verified; no known regressions).
+
 ### Success Criteria
 - V1 runs locally with no mocks for AI generation.
 - VRM loads and animates; textures generate and visibly apply; projects persist and reload.
 - Imported VRMs consistently auto-frame into view (centered, no cut-off) across varied avatars.
+- Users can align textures to UVs via UV template workflow; can transform and rollback per material.
 
 ---
 
@@ -96,10 +129,12 @@
 3. As a user, I can export generated assets (PNGs + manifests) from a project.
 4. As a user, I can create and save pose presets (idle pose, wave pose).
 5. As a user, I can record a short animation preview clip (or capture timed screenshots) for sharing.
+6. As a user, I can save/reload **per-material texture assignments + transforms** as part of a project.
 
 ### Implementation Steps
 - Reference Studio:
   - Turnaround generator UI (grid), prompt library, regenerate per-panel.
+  - Attach turnaround images to project metadata.
 - Image-to-3D integration (fal.ai Trellis/Hunyuan3D):
   - Add API key settings page (stored locally in browser storage; never log).
   - Job submission + polling + result viewer.
@@ -107,12 +142,18 @@
 - VRM driver upgrades:
   - Pose editor (limited bone rotations) + save pose presets.
   - Simple timeline: sequence of preset animations + expressions.
+- Project persistence upgrades (newly enabled by Phase 2 P1 work):
+  - Save `materialAssignments` (asset id/url) + `materialTransforms` into project.
+  - On project load, re-apply textures + transforms to the VRM.
+  - Add quick “before/after” preview and one-click rollback for the whole avatar.
 
 ### Testing (end of Phase 3)
 - E2E: turnaround → save → reload → image-to-3D (if key) → view result → export.
+- E2E: apply UV workflow texture → tweak transforms → save project → reload → verify textures/transforms persist.
 
 ### Success Criteria
 - Model creation workflow is usable end-to-end (where key exists) and never silently fails.
+- Projects reliably persist VRM + assigned textures + transforms and restore them correctly.
 
 ---
 
@@ -133,19 +174,18 @@
 ---
 
 ## Next Actions (Immediate)
-1. **Start UV-accurate texture application improvements (new top priority)**
-   - Audit current pipeline:
-     - Backend: `/app/backend/ai_service.py` (generation + any post-processing)
-     - Frontend: material discovery + texture apply flow (`discoverMaterials`, material slot UI, texture assignment)
-   - Identify how generated images map to specific VRM materials today (baseColorMap? emissive? shade?) and where misalignment occurs (UV layout mismatch vs wrong material target vs color space vs texture transform).
-2. Add a **Texture-to-Material Fit workflow** (incremental, no GPU assumptions):
-   - Generate or display **UV previews** per material (wireframe UV snapshot) so users can see how a texture will map.
-   - Add optional **2D transform controls** at apply-time (offset/scale/rotation) via `texture.offset`, `texture.repeat`, `texture.center`, `texture.rotation` with a “Reset” button.
-   - Add “Apply to: face/hair/top/bottom/accessory” guided presets that select likely materials automatically.
-3. Add **validation + persistence**:
-   - Save per-material texture assignment + transform settings into project metadata.
-   - Add a quick “before/after” preview and a one-click rollback.
-4. Testing mandate for the new work:
-   - Add a focused frontend test run after implementing UV-mapping features:
-     - Import VRM → apply generated texture to a chosen material → verify visible change + no console errors → save → reload.
-5. After texture UV mapping improvement is stable, proceed with remaining Phase 2/3 backlog as needed (pose/animation E2E regression pass, turnaround attachment, export).
+1. **Persist UV pipeline state into Projects (new top priority)**
+   - Extend backend project schema to store:
+     - `materialAssignments`: `{ materialName: { assetId, dataUrl, kind, prompt, ... } }`
+     - `materialTransforms`: `{ materialName: { offset, repeat, rotation, flipY } }`
+   - On project load: re-apply `applyTexture()` and `updateMaterialTransform()`.
+2. **Turnaround Attachment & Export**
+   - Add turnaround generation UI and store outputs in project assets.
+   - Add export bundle: images + manifests + project JSON.
+3. **UX polish for UV workflow**
+   - Add “Apply to category” bulk actions (face/hair/top/bottom) using `classifyMaterial()`.
+   - Add a “UV template gallery” per material for iterative generations.
+4. **Testing mandate for Phase 3 persistence work**
+   - Frontend testing_agent_v3 after persistence:
+     - Import VRM → UV → Lab → apply → tweak Fit sliders → save project → reload → verify textures + transforms restored.
+
