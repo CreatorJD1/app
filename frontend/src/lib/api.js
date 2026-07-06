@@ -5,6 +5,17 @@ export const API_BASE = `${BACKEND_URL}/api`;
 
 const http = axios.create({ baseURL: API_BASE, timeout: 300000 });
 
+// Access-token support for split deployments (frontend on one origin, backend
+// on another): same-origin deploys ride the vcs_token cookie the backend drops
+// on a ?token= visit, but lax cookies don't travel on cross-site XHR — so we
+// remember the token from the URL and send it as a header instead.
+try {
+  const urlToken = new URLSearchParams(window.location.search).get("token");
+  if (urlToken) localStorage.setItem("vcs_token", urlToken);
+  const stored = localStorage.getItem("vcs_token");
+  if (stored) http.defaults.headers.common["X-VCS-Token"] = stored;
+} catch (_) { /* SSR / storage-blocked environments: cookie path still works */ }
+
 export const api = {
   health: () => http.get("/").then((r) => r.data),
 

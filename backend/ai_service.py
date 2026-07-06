@@ -9,7 +9,15 @@ import re
 import uuid
 from typing import List, Optional
 
-from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+# emergentintegrations is the Emergent platform's private package (installed in
+# the Docker image / dev env, not on public PyPI). Import it lazily-guarded so
+# the backend still boots without it — projects, VRM upload/download, and the
+# VRoid Hub bridge all work; only the generation endpoints need this, and they
+# raise the same clear RuntimeError a missing EMERGENT_LLM_KEY does.
+try:
+    from emergentintegrations.llm.chat import LlmChat, UserMessage, ImageContent
+except ImportError:  # pragma: no cover - exercised only where the pkg is absent
+    LlmChat = UserMessage = ImageContent = None
 
 logger = logging.getLogger(__name__)
 
@@ -34,6 +42,8 @@ STYLE_TAIL = (
 
 
 def _get_key() -> str:
+    if LlmChat is None:
+        raise RuntimeError("emergentintegrations package not installed")
     key = os.getenv("EMERGENT_LLM_KEY")
     if not key:
         raise RuntimeError("EMERGENT_LLM_KEY missing")
