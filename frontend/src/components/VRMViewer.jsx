@@ -224,32 +224,46 @@ export const VRMViewer = () => {
         ref.scene.add(vrm.scene);
         window.__vcs_vrm = vrm;
 
-        // Auto-frame the character using a bounding sphere (robust across VRM proportions)
+        // ---- Auto-frame camera ----
+        // Strategy: compute a robust world-space bounding box for the character,
+        // then fit-to-frame accounting for BOTH vertical and horizontal FOV.
+        // 1. Advance VRM by a tick so SkinnedMeshes are properly posed.
+        // 2. Prefer per-SkinnedMesh geometry bounds transformed to world space
+        //    (most reliable; ignores helper objects & unbounded springs).
+        // 3. Fall back to humanoid rig extents, then to VRM-standard proportions.
         try {
-          const box = new THREE.Box3().setFromObject(vrm.scene);
-          if (box.isEmpty()) throw new Error("empty bbox");
-          const sphere = new THREE.Sphere();
-          box.getBoundingSphere(sphere);
-          const center = sphere.center.clone();
-          const radius = Math.max(sphere.radius, 0.5);
+          if (typeof vrm.update === "function") vrm.update(0);
+          vrm.scene.updateMatrixWorld(true);
+
+          const box = computeVRMBoundingBox(vrm);
+          const size = new THREE.Vector3();
+          const center = new THREE.Vector3();
+          box.getSize(size);
+          box.getCenter(center);
+
+          // Fit-to-frame using BOTH aspect axes; fillRatio=0.78 → char occupies ~78%
+          // of the shorter viewport dimension (so it never crops on portrait viewports).
+          const fillRatio = 0.78;
           const fovRad = (ref.camera.fov * Math.PI) / 180;
-          // Distance to fit the sphere vertically AND horizontally
-          const distV = radius / Math.sin(fovRad / 2);
-          const distH = distV / Math.max(0.5, ref.camera.aspect);
-          const dist = Math.max(distV, distH) * 1.15;
+          const aspect = ref.camera.aspect || 1;
+          const distV = size.y / (2 * Math.tan(fovRad / 2) * fillRatio);
+          // Horizontal fit uses effective horizontal fov (fov * aspect approx)
+          const distH = size.x / (2 * Math.tan(fovRad / 2) * aspect * fillRatio);
+          const dist = Math.max(distV, distH, 1.2);
+
           if (ref.controls && ref.camera) {
             ref.controls.target.set(center.x, center.y, center.z);
             ref.camera.position.set(center.x, center.y, center.z + dist);
-            ref.camera.near = Math.max(0.01, dist / 200);
-            ref.camera.far = dist * 50;
+            ref.camera.near = 0.05;
+            ref.camera.far = Math.max(50, dist * 20);
             ref.camera.updateProjectionMatrix();
             ref.controls.update();
           }
         } catch (err) {
-          // Fallback: known-good default framing for a standard-height character
+          console.warn("[VRMViewer] auto-frame fallback:", err);
           if (ref.camera && ref.controls) {
-            ref.controls.target.set(0, 1.25, 0);
-            ref.camera.position.set(0, 1.35, 2.4);
+            ref.controls.target.set(0, 0.9, 0);
+            ref.camera.position.set(0, 0.9, 3.2);
             ref.camera.updateProjectionMatrix();
             ref.controls.update();
           }
@@ -392,4 +406,87 @@ function makeGradientTexture() {
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   return tex;
+}
+
+/**
+ * Compute a robust world-space AABB for a VRM character.
+ * Prefers per-SkinnedMesh geometry bounds transformed to world space (ignores
+ * unbounded spring-bone helpers, ignores hidden objects). Falls back to
+ * humanoid rig extents, then to VRM-standard proportions.
+ */
+function computeVRMBoundingBox(vrm) {
+  const box = new THREE.Box3();
+  const tmpBox = new THREE.Box3();
+
+  // Pass 1: SkinnedMesh + Mesh geometry bounding boxes → world space
+  let meshCount = 0;
+  vrm.scene.traverse((obj) => {
+    if (!obj.visible) return;
+    if (obj.isMesh || obj.isSkinnedMesh) {
+      const geom = obj.geometry;
+      if (!geom) return;
+      if (!geom.boundingBox) geom.computeBoundingBox();
+      if (!geom.boundingBox) return;
+      tmpBox.copy(geom.boundingBox).applyMatrix4(obj.matrixWorld);
+      if (
+        Number.isFinite(tmpBox.min.x) &&
+        Number.isFinite(tmpBox.max.x) &&
+        Number.isFinite(tmpBox.min.y) &&
+        Number.isFinite(tmpBox.max.y)
+      ) {
+        box.union(tmpBox);
+        meshCount++;
+      }
+    }
+  });
+
+  const size = new THREE.Vector3();
+  box.getSize(size);
+  const looksValid =
+    meshCount > 0 &&
+    !box.isEmpty() &&
+    size.y > 0.4 &&
+    size.y < 10.0;
+
+  if (looksValid) return box;
+
+  // Pass 2: humanoid rig extents
+  const humanoid = vrm.humanoid;
+  if (humanoid) {
+    const boneNames = [
+      "head", "neck", "chest", "spine", "hips",
+      "leftUpperArm", "rightUpperArm", "leftLowerArm", "rightLowerArm",
+      "leftHand", "rightHand",
+      "leftUpperLeg", "rightUpperLeg", "leftLowerLeg", "rightLowerLeg",
+      "leftFoot", "rightFoot",
+    ];
+    const rigBox = new THREE.Box3();
+    const p = new THREE.Vector3();
+    boneNames.forEach((name) => {
+      const b = humanoid.getNormalizedBoneNode(name);
+      if (b) {
+        b.getWorldPosition(p);
+        rigBox.expandByPoint(p);
+      }
+    });
+    const head = humanoid.getNormalizedBoneNode("head");
+    if (head) {
+      head.getWorldPosition(p);
+      rigBox.expandByPoint(new THREE.Vector3(p.x, p.y + 0.18, p.z));
+    }
+    if (!rigBox.isEmpty()) {
+      rigBox.min.x -= 0.15;
+      rigBox.max.x += 0.15;
+      rigBox.min.z -= 0.15;
+      rigBox.max.z += 0.15;
+      rigBox.min.y = Math.min(rigBox.min.y, 0);
+      return rigBox;
+    }
+  }
+
+  // Pass 3: standard VRM proportions
+  return new THREE.Box3(
+    new THREE.Vector3(-0.35, 0, -0.35),
+    new THREE.Vector3(0.35, 1.6, 0.35)
+  );
 }

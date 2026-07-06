@@ -1,42 +1,26 @@
 [
   {
-    "content": "P3: Pose safety",
+    "content": "Review current VRMViewer.jsx camera centering logic",
     "status": "completed"
   },
   {
-    "content": "P3: Extended animation prefabs + new emotion clips (talking/cry/scream/die/sleep)",
+    "content": "Locate test VRM file used for testing",
     "status": "completed"
   },
   {
-    "content": "P3: Procedural keyframe timeline",
+    "content": "Rewrite camera targeting/fit-to-frame math cleanly",
     "status": "completed"
   },
   {
-    "content": "P3: Loop toggle + duration override",
-    "status": "completed"
+    "content": "Screenshot verification of fix",
+    "status": "in_progress"
   },
   {
-    "content": "P3: Wardrobe + Accessories tabs",
-    "status": "completed"
+    "content": "Run testing_agent_v3 to verify centering fix",
+    "status": "pending"
   },
   {
-    "content": "P3: Poly subdivision + 8K upscale",
-    "status": "completed"
-  },
-  {
-    "content": "P3: Character Analyzer",
-    "status": "completed"
-  },
-  {
-    "content": "P3: VRoid Unity SDK REST port + docs (DEPLOY.md)",
-    "status": "completed"
-  },
-  {
-    "content": "P3: Persistent hosting configs (Dockerfile, HF Space, Colab notebook, docker-compose)",
-    "status": "completed"
-  },
-  {
-    "content": "P3: GitHub push instructions delivered via support_agent",
-    "status": "completed"
+    "content": "Move on to improve AI texture UV mapping",
+    "status": "pending"
   }
 ]
