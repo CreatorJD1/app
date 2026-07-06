@@ -1,0 +1,99 @@
+{
+  "timestamp": "2026-07-06T01:37:48.383181",
+  "passed": 12,
+  "total": 13,
+  "success_rate": "92.3%",
+  "results": [
+    {
+      "test": "Health Check",
+      "passed": true,
+      "status_code": 200,
+      "message": "Response: {'app': 'VRoid Companion Studio', 'status': 'ok'}",
+      "response_data": null
+    },
+    {
+      "test": "Create Project",
+      "passed": true,
+      "status_code": 200,
+      "message": "Created project ID: 7b3aedd0-71ef-4bbc-aa5c-f2c37457fc0a",
+      "response_data": null
+    },
+    {
+      "test": "Get Project",
+      "passed": true,
+      "status_code": 200,
+      "message": "Retrieved project: Test Project 013724",
+      "response_data": null
+    },
+    {
+      "test": "List Projects",
+      "passed": true,
+      "status_code": 200,
+      "message": "Found 1 projects",
+      "response_data": null
+    },
+    {
+      "test": "Update Project",
+      "passed": true,
+      "status_code": 200,
+      "message": "Project updated successfully",
+      "response_data": null
+    },
+    {
+      "test": "Generate Texture",
+      "passed": false,
+      "status_code": 502,
+      "message": "<!DOCTYPE html>\n<!--[if lt IE 7]> <html class=\"no-js ie6 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 7]>    <html class=\"no-js ie7 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if IE 8]>    <html class=\"no-js ie8 oldie\" lang=\"en-US\"> <![endif]-->\n<!--[if gt IE 8]><!--> <html class=\"no-js\" lang=\"en-US\"> <!",
+      "response_data": null
+    },
+    {
+      "test": "Generate Concept",
+      "passed": true,
+      "status_code": 200,
+      "message": "Generated concept asset ID: ff74c1a1-83dd-4e24-8920-d739d29eeb46",
+      "response_data": null
+    },
+    {
+      "test": "Generate Variant",
+      "passed": true,
+      "status_code": 200,
+      "message": "Generated variant asset ID: 553f1761-a04f-49f7-b0d9-f1227327d29e",
+      "response_data": null
+    },
+    {
+      "test": "Generate Turnaround",
+      "passed": true,
+      "status_code": 200,
+      "message": "Generated 4/4 turnaround panels",
+      "response_data": null
+    },
+    {
+      "test": "List Assets",
+      "passed": true,
+      "status_code": 200,
+      "message": "Found 6 assets",
+      "response_data": null
+    },
+    {
+      "test": "Delete Asset",
+      "passed": true,
+      "status_code": 200,
+      "message": "Deleted asset ff74c1a1-83dd-4e24-8920-d739d29eeb46",
+      "response_data": null
+    },
+    {
+      "test": "VRM Upload Validation",
+      "passed": true,
+      "status_code": 400,
+      "message": "Correctly rejected non-VRM file",
+      "response_data": null
+    },
+    {
+      "test": "Delete Project",
+      "passed": true,
+      "status_code": 200,
+      "message": "Deleted project 7b3aedd0-71ef-4bbc-aa5c-f2c37457fc0a",
+      "response_data": null
+    }
+  ]
+}

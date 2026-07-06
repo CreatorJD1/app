@@ -13,22 +13,22 @@
   },
   {
     "content": "Phase 2: Get design guidelines from design_agent",
-    "status": "in_progress"
+    "status": "completed"
   },
   {
     "content": "Phase 2: Build backend (FastAPI endpoints for AI gen, projects, VRM metadata)",
-    "status": "pending"
+    "status": "completed"
   },
   {
     "content": "Phase 2: Build frontend (VRM viewer, animation, expressions, texture lab, reference studio)",
-    "status": "pending"
+    "status": "completed"
   },
   {
-    "content": "Phase 2: All user stories covered in development and testing",
-    "status": "pending"
+    "content": "Phase 2: All user stories covered in development",
+    "status": "completed"
   },
   {
     "content": "Phase 2: End-to-end testing using testing_agent_v3",
-    "status": "pending"
+    "status": "in_progress"
   }
 ]
