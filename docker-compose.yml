@@ -21,6 +21,9 @@ services:
       CORS_ORIGINS: "*"
       # set these to real values before starting
       EMERGENT_LLM_KEY: ${EMERGENT_LLM_KEY}
+      # optional access token: blank = open (local use); set it before exposing
+      # this stack to the internet (tunnel, port-forward, cloud host)
+      VCS_ACCESS_TOKEN: ${VCS_ACCESS_TOKEN:-}
       VROID_CLIENT_ID: ${VROID_CLIENT_ID:-}
       VROID_CLIENT_SECRET: ${VROID_CLIENT_SECRET:-}
       HF_TOKEN: ${HF_TOKEN:-}

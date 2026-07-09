@@ -22,6 +22,7 @@ Anime-only VRM 3D character creator app. Loads .vrm files, drives runtime animat
 | `DB_NAME` | e.g. `vroid_companion` |
 | `VROID_CLIENT_ID` | (optional) VRoid Hub OAuth app client id |
 | `VROID_CLIENT_SECRET` | (optional) VRoid Hub OAuth app client secret |
+| `VCS_ACCESS_TOKEN` | (optional) access token gating the whole app. Blank = public. With it set, open the Space as `https://<space>.hf.space/?token=<value>` once — a 30-day cookie takes over from there. `/health` stays open for probes. |
 
 ## Persistent storage
 

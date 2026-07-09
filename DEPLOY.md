@@ -59,6 +59,40 @@ Colab is not a persistent host — sessions die after ~12h. Good for demos.
 
 ---
 
+## Access control (set this before going public)
+
+Every deployment above puts the whole API on the internet — projects, uploads,
+deletes, and the Gemini-backed generation endpoints. Gate it with one env var:
+
+```bash
+VCS_ACCESS_TOKEN=<any long random string>     # e.g. openssl rand -hex 24
+```
+
+Blank (the default) means **no gate at all** — local dev stays frictionless.
+With it set, every request must carry the token via one of:
+
+1. `?token=<value>` — visit the app once as `https://<host>/?token=...`; the
+   backend drops a 30-day `vcs_token` cookie and the SPA works normally after.
+2. `X-VCS-Token: <value>` header — for programmatic clients (curl, Alpecca).
+3. The `vcs_token` cookie itself.
+
+Browser navigations without a token get a login page; API calls get `401 JSON`.
+`GET /health` is always open for platform probes. There is deliberately no
+localhost bypass — tunnel traffic (B2, Colab) arrives *from* localhost.
+
+**Split deploys (B1) caveat:** cookies don't ride cross-site XHR, so the
+frontend sends the token as an `X-VCS-Token` header instead (it remembers
+`?token=` in localStorage — `frontend/src/lib/api.js`). Also set
+`CORS_ORIGINS=https://your-pages-domain` explicitly on the backend: the
+default `*` cannot be combined with credentialed requests per the CORS spec.
+
+**Pairing with Alpecca:** her companion app can pull her latest `.vrm`
+straight from this studio — set `ALPECCA_STUDIO_URL=https://<host>` and
+`ALPECCA_STUDIO_TOKEN=<same token>` on the Alpecca side, then use "Sync from
+studio" on her `/vrm` page.
+
+---
+
 ## VRoid Unity SDK Compatibility
 
 The official VRoid SDK (v0.5.2) is a Unity C# package that speaks OAuth 2 + REST against `hub.vroid.com`. **Our backend already implements the same wire protocol** (see `backend/vroid_hub_client.py` + `backend/vroid_hub.py`).
