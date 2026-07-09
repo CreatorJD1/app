@@ -12,9 +12,13 @@ import { ProjectsDialog } from "@/components/dialogs/ProjectsDialog";
 import { SettingsDrawer } from "@/components/dialogs/SettingsDrawer";
 import { CharacterAnalyzerDialog } from "@/components/dialogs/CharacterAnalyzerDialog";
 import { useStudioStore } from "@/store/studioStore";
+import { api } from "@/lib/api";
 
 export default function StudioPage() {
   const vrmUrl = useStudioStore((s) => s.vrmUrl);
+  const setVrm = useStudioStore((s) => s.setVrm);
+  const setProject = useStudioStore((s) => s.setProject);
+  const setAlpeccaLive = useStudioStore((s) => s.setAlpeccaLive);
   const setTextureLabOpen = useStudioStore((s) => s.setTextureLabOpen);
   const setReferenceStudioOpen = useStudioStore((s) => s.setReferenceStudioOpen);
   const setProjectsOpen = useStudioStore((s) => s.setProjectsOpen);
@@ -44,6 +48,33 @@ export default function StudioPage() {
       });
     }, 500);
     return () => clearTimeout(t);
+  }, []);
+
+  // Auto-load the most recent VRM project on mount (nothing is persisted, so a
+  // refresh would otherwise drop to the empty viewport) and start the live
+  // Alpecca driver so she's a companion — her real mood/voice state drives the
+  // model — out of the box. Read-only; degrades quietly if the API is down.
+  useEffect(() => {
+    if (vrmUrl) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const res = await api.listProjects();
+        const list = Array.isArray(res) ? res : res?.projects || res?.items || [];
+        const withVrm = list.filter((p) => p?.vrm_filename && p?.id);
+        if (!withVrm.length || cancelled) return;
+        const newest = [...withVrm].sort((a, b) =>
+          String(b.created_at || b.updated_at || "").localeCompare(String(a.created_at || a.updated_at || "")))[0];
+        setProject(newest);
+        setVrm(api.vrmUrl(newest.id), newest.vrm_filename);
+        try {
+          await api.alpeccaPose(false); // only go live if her state is actually reachable
+          if (!cancelled) setAlpeccaLive(true);
+        } catch (_) { /* Alpecca app offline — stay on procedural idle */ }
+      } catch (_) { /* no backend/projects — user imports manually */ }
+    })();
+    return () => { cancelled = true; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   return (

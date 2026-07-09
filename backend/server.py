@@ -10,8 +10,17 @@ from pathlib import Path
 ROOT_DIR = Path(__file__).parent
 load_dotenv(ROOT_DIR / ".env")
 
-mongo_url = os.environ["MONGO_URL"]
-client = AsyncIOMotorClient(mongo_url)
+mongo_url = os.environ.get("MONGO_URL", "memory").strip()
+if mongo_url.lower() in ("", "memory", "mock", "embedded"):
+    # Local Claude Code port: no MongoDB/Docker installed on this machine, so
+    # use an in-memory async Mongo (mongomock-motor) and the whole backend runs
+    # offline. Set MONGO_URL to a real mongodb:// URI for cross-restart
+    # persistence (e.g. after installing MongoDB locally).
+    from mongomock_motor import AsyncMongoMockClient
+    client = AsyncMongoMockClient()
+    logging.getLogger("vcs").info("DB: embedded in-memory (mongomock-motor); set MONGO_URL for persistence")
+else:
+    client = AsyncIOMotorClient(mongo_url)
 db = client[os.environ.get("DB_NAME", "vroid_companion")]
 
 app = FastAPI(title="VRoid Companion Studio", version="1.0.0")

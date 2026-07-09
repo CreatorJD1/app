@@ -19,6 +19,33 @@ export const useStudioStore = create((set, get) => ({
   expressions: {},
   setExpression: (name, value) => set((s) => ({ expressions: { ...s.expressions, [name]: value } })),
   resetExpressions: () => set({ expressions: {} }),
+  // Apply a full named face look at once (replaces current weights).
+  applyExpressionSet: (obj) => set({ expressions: { ...(obj || {}) } }),
+  // Named expression presets — save/load face looks, persisted to localStorage.
+  expressionPresets: (() => {
+    try { return JSON.parse(localStorage.getItem("vcs.exprPresets") || "[]"); } catch (_) { return []; }
+  })(),
+  saveExpressionPreset: (name) => set((s) => {
+    const clean = { ...s.expressions };
+    for (const k of Object.keys(clean)) if (!clean[k]) delete clean[k]; // drop zeros
+    const preset = {
+      id: `ep-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+      name: (name || `Look ${s.expressionPresets.length + 1}`).trim(),
+      expressions: clean,
+    };
+    const next = [...s.expressionPresets.filter((p) => p.name !== preset.name), preset];
+    try { localStorage.setItem("vcs.exprPresets", JSON.stringify(next)); } catch (_) { /* quota */ }
+    return { expressionPresets: next };
+  }),
+  applyExpressionPreset: (id) => set((s) => {
+    const p = s.expressionPresets.find((x) => x.id === id);
+    return p ? { expressions: { ...p.expressions } } : {};
+  }),
+  deleteExpressionPreset: (id) => set((s) => {
+    const next = s.expressionPresets.filter((x) => x.id !== id);
+    try { localStorage.setItem("vcs.exprPresets", JSON.stringify(next)); } catch (_) { /* ignore */ }
+    return { expressionPresets: next };
+  }),
   availableExpressions: [],
   setAvailableExpressions: (list) => set({ availableExpressions: list }),
   availableMaterials: [],
@@ -46,7 +73,13 @@ export const useStudioStore = create((set, get) => ({
 
   // Animation
   animationClip: "idle",
-  setAnimationClip: (clip) => set({ animationClip: clip }),
+  setAnimationClip: (clip) => set({ animationClip: clip, vrmaUrl: null }),
+  // Real VRM Animation (.vrma) playback. When vrmaUrl is set it takes over from
+  // the procedural clips; picking a procedural clip clears it.
+  vrmaUrl: null,
+  vrmaName: "",
+  setVrma: (url, name) => set({ vrmaUrl: url, vrmaName: name }),
+  clearVrma: () => set({ vrmaUrl: null, vrmaName: "" }),
   animationSpeed: 1.0,
   setAnimationSpeed: (v) => set({ animationSpeed: v }),
   animationLoop: true,
@@ -59,6 +92,11 @@ export const useStudioStore = create((set, get) => ({
   setAutoBlink: (v) => set({ autoBlink: v }),
   lookAtMouse: true,
   setLookAtMouse: (v) => set({ lookAtMouse: v }),
+  // Live driver: mirror Alpecca's real mood/voice state onto the clip + emotion
+  alpeccaLive: false,
+  setAlpeccaLive: (v) => set({ alpeccaLive: v }),
+  alpeccaStatus: "", // last driver status line for the UI
+  setAlpeccaStatus: (v) => set({ alpeccaStatus: v }),
 
   // Pose
   boneOffsets: {},
@@ -108,6 +146,9 @@ export const useStudioStore = create((set, get) => ({
   setBackground: (v) => set({ background: v }),
   backgroundColor: "#0F1318",
   setBackgroundColor: (v) => set({ backgroundColor: v }),
+  // Bloom (emissive glow) — how strongly bright/emissive pixels halo.
+  bloomStrength: 0.55,
+  setBloomStrength: (v) => set({ bloomStrength: v }),
 
   // HQ / subdivision
   subdivisionLevel: 0, // 0 = off, 1 or 2 = iterations

@@ -11,6 +11,15 @@ import { CLIP_META } from "@/lib/vrmAnimations";
 
 const GROUPS = ["Idle", "Gesture", "Emotion", "Dance", "Locomotion", "Pose", "Custom"];
 
+// Real VRM Animation clips bundled under frontend/public/vrma/. Emotion/reaction
+// clips from github.com/tk256ailab/vrm-viewer (MIT); the gesture/action clips are
+// the official VRoid sample motions. These play keyframed motion via the mixer.
+const VRMA_GROUPS = [
+  { label: "Emotion", clips: ["Relax", "Sleepy", "Thinking", "Sad", "Angry", "Surprised", "Blush"] },
+  { label: "Gesture", clips: ["Clapping", "Goodbye", "Greeting", "Hello", "PeaceSign", "LookAround"] },
+  { label: "Action", clips: ["Jump", "Spin", "ShowFullBody", "ModelPose", "MotionPose"] },
+];
+
 export const AnimationPanel = () => {
   const clip = useStudioStore((s) => s.animationClip);
   const setClip = useStudioStore((s) => s.setAnimationClip);
@@ -26,6 +35,20 @@ export const AnimationPanel = () => {
   const setAutoBlink = useStudioStore((s) => s.setAutoBlink);
   const lookAtMouse = useStudioStore((s) => s.lookAtMouse);
   const setLookAtMouse = useStudioStore((s) => s.setLookAtMouse);
+  const alpeccaLive = useStudioStore((s) => s.alpeccaLive);
+  const setAlpeccaLive = useStudioStore((s) => s.setAlpeccaLive);
+  const alpeccaStatus = useStudioStore((s) => s.alpeccaStatus);
+  const vrmaUrl = useStudioStore((s) => s.vrmaUrl);
+  const vrmaName = useStudioStore((s) => s.vrmaName);
+  const setVrma = useStudioStore((s) => s.setVrma);
+  const clearVrma = useStudioStore((s) => s.clearVrma);
+  const vrmaInputRef = useRef(null);
+
+  const onVrmaFile = (file) => {
+    if (!file) return;
+    if (!file.name.toLowerCase().endsWith(".vrma")) return toast.error("Choose a .vrma file");
+    setVrma(URL.createObjectURL(file), file.name.replace(/\.vrma$/i, ""));
+  };
   const customFrames = useStudioStore((s) => s.customFrames);
   const addKeyframe = useStudioStore((s) => s.addKeyframe);
   const removeKeyframe = useStudioStore((s) => s.removeKeyframe);
@@ -44,7 +67,59 @@ export const AnimationPanel = () => {
     <div className="space-y-3">
       <Card>
         <CardHeader className="pb-2">
-          <CardTitle className="text-sm font-semibold tracking-wide">Animation Prefabs</CardTitle>
+          <CardTitle className="text-sm font-semibold tracking-wide">Motion clips</CardTitle>
+        </CardHeader>
+        <CardContent className="space-y-3">
+          {VRMA_GROUPS.map((grp) => (
+            <div key={grp.label}>
+              <div className="text-[10px] uppercase font-mono text-muted-foreground mb-1">{grp.label}</div>
+              <div className="grid grid-cols-2 gap-2">
+                {grp.clips.map((name) => {
+                  const url = `/vrma/${name}.vrma`;
+                  const active = vrmaUrl === url;
+                  return (
+                    <button
+                      key={name}
+                      data-testid={`vrma-clip-${name}`}
+                      onClick={() => setVrma(url, name)}
+                      className={`text-left rounded-lg border px-3 py-2 transition-colors ${
+                        active ? "border-primary/60 bg-primary/10 text-primary" : "border-border/70 hover:bg-white/5"
+                      }`}
+                    >
+                      <div className="text-xs font-semibold">{name}</div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
+          <div className="flex gap-2">
+            <Button variant="secondary" className="flex-1" onClick={() => vrmaInputRef.current?.click()} data-testid="vrma-import">
+              Import .vrma
+            </Button>
+            <Button variant="ghost" onClick={() => { clearVrma(); setClip("idle"); }} disabled={!vrmaUrl} data-testid="vrma-clear">
+              Procedural
+            </Button>
+          </div>
+          <input
+            ref={vrmaInputRef}
+            type="file"
+            accept=".vrma"
+            className="hidden"
+            data-testid="vrma-import-input"
+            onChange={(e) => onVrmaFile(e.target.files?.[0])}
+          />
+          {vrmaUrl && (
+            <div className="text-[10px] text-muted-foreground">
+              Playing <span className="text-foreground font-medium">{vrmaName}</span> — real keyframed motion
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+      <Card>
+        <CardHeader className="pb-2">
+          <CardTitle className="text-sm font-semibold tracking-wide">Procedural poses</CardTitle>
         </CardHeader>
         <CardContent className="space-y-3">
           {GROUPS.map((g) => {
@@ -138,6 +213,15 @@ export const AnimationPanel = () => {
               <div className="text-[10px] text-muted-foreground">Head + eyes track pointer</div>
             </div>
             <Switch data-testid="toggle-look-at-mouse" checked={lookAtMouse} onCheckedChange={setLookAtMouse} />
+          </div>
+          <div className="flex items-center justify-between">
+            <div>
+              <div className="text-sm">Live: Alpecca</div>
+              <div className="text-[10px] text-muted-foreground">
+                {alpeccaStatus || "Drive clip + emotion from her real mood/voice"}
+              </div>
+            </div>
+            <Switch data-testid="toggle-alpecca-live" checked={alpeccaLive} onCheckedChange={setAlpeccaLive} />
           </div>
         </CardContent>
       </Card>

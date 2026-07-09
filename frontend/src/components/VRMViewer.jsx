@@ -1,7 +1,13 @@
 import { useEffect, useRef, useState } from "react";
 import * as THREE from "three";
 import { OrbitControls } from "three/examples/jsm/controls/OrbitControls.js";
+import { GLTFLoader } from "three/examples/jsm/loaders/GLTFLoader.js";
+import { EffectComposer } from "three/examples/jsm/postprocessing/EffectComposer.js";
+import { RenderPass } from "three/examples/jsm/postprocessing/RenderPass.js";
+import { UnrealBloomPass } from "three/examples/jsm/postprocessing/UnrealBloomPass.js";
+import { OutputPass } from "three/examples/jsm/postprocessing/OutputPass.js";
 import { VRMExpressionPresetName } from "@pixiv/three-vrm";
+import { VRMAnimationLoaderPlugin, createVRMAnimationClip } from "@pixiv/three-vrm-animation";
 import { toast } from "sonner";
 
 import { useStudioStore } from "@/store/studioStore";
@@ -11,8 +17,18 @@ import {
   discoverExpressionNames,
   applyBoneOffsets,
 } from "@/lib/vrmLoader";
-import { applyClip, applyAutoBlink } from "@/lib/vrmAnimations";
+import { applyClip, applyAutoBlink, applyClipExpressions, clipHoldsEyesClosed, computeGaze } from "@/lib/vrmAnimations";
+import { groundFeet, snapGround } from "@/lib/vrmIK";
 import { subdivideVRM, restoreVRM } from "@/lib/subdivide";
+import { api } from "@/lib/api";
+
+// Map Alpecca's mood-driven clip ids onto the real .vrma motion clips.
+const ALPECCA_MOOD_VRMA = {
+  sleep: "Sleepy", cry: "Sad", thinking: "Thinking", worried: "Thinking",
+  idle_soft: "Relax", tender: "Relax", content: "Relax",
+  cheer: "Clapping", joyful: "Clapping", wave: "Goodbye", affectionate: "Goodbye",
+  dance: "Jump", playful: "Jump", idle: "LookAround", sit: "Relax", talking: "LookAround",
+};
 
 const LIGHTING = {
   studio: [
@@ -46,6 +62,113 @@ export const VRMViewer = () => {
   const vrmUrl = useStudioStore((s) => s.vrmUrl);
   const setAvailableExpressions = useStudioStore((s) => s.setAvailableExpressions);
   const setAvailableMaterials = useStudioStore((s) => s.setAvailableMaterials);
+  const alpeccaLive = useStudioStore((s) => s.alpeccaLive);
+  const vrmaUrl = useStudioStore((s) => s.vrmaUrl);
+
+  // Load + play a real .vrma clip when one is selected; clearing it (null) hands
+  // the skeleton back to the procedural clips. A SINGLE persistent mixer lives on
+  // stateRef so clip changes CROSS-FADE (no hard cut) — the live mood driver maps
+  // every mood to a .vrma, so this makes her mood transitions smooth. Loaded clips
+  // are cached per-url so re-visited moods don't reload.
+  useEffect(() => {
+    const ref = stateRef.current;
+    if (!ref || !ref.scene) return undefined;
+    let cancelled = false;
+    const vrm = ref.vrm;
+    const CROSSFADE = 0.45;
+
+    // Clearing the clip → fade the current action out, then drop the mixer so the
+    // procedural clips (which reset rotations each frame) take back over cleanly.
+    if (!vrmaUrl || !vrm) {
+      const dying = ref.vrmaMixer;
+      if (dying && ref.vrmaCurrentAction) {
+        ref.vrmaCurrentAction.fadeOut(CROSSFADE);
+        const drop = setTimeout(() => {
+          if (stateRef.current.vrmaMixer === dying) {
+            dying.stopAllAction();
+            stateRef.current.vrmaMixer = null;
+            stateRef.current.vrmaCurrentAction = null;
+            stateRef.current.vrmaClips = {};
+          }
+        }, CROSSFADE * 1000 + 30);
+        return () => { cancelled = true; clearTimeout(drop); };
+      }
+      if (dying) { dying.stopAllAction(); ref.vrmaMixer = null; }
+      ref.vrmaCurrentAction = null;
+      return undefined;
+    }
+
+    // Persistent mixer, (re)built only when the VRM itself changes.
+    if (!ref.vrmaMixer || ref.vrmaMixerVrm !== vrm) {
+      if (ref.vrmaMixer) ref.vrmaMixer.stopAllAction();
+      ref.vrmaMixer = new THREE.AnimationMixer(vrm.scene);
+      ref.vrmaMixerVrm = vrm;
+      ref.vrmaClips = {};
+      ref.vrmaCurrentAction = null;
+    }
+    if (!ref.vrmaClips) ref.vrmaClips = {};
+
+    const playClip = (clip) => {
+      const next = ref.vrmaMixer.clipAction(clip);
+      next.reset();
+      next.enabled = true;
+      next.setEffectiveTimeScale(1);
+      next.setEffectiveWeight(1);
+      next.play();
+      const prev = ref.vrmaCurrentAction;
+      if (prev && prev !== next) prev.crossFadeTo(next, CROSSFADE, false);
+      else next.fadeIn(CROSSFADE);
+      ref.vrmaCurrentAction = next;
+    };
+
+    const cached = ref.vrmaClips[vrmaUrl];
+    if (cached) { playClip(cached); return () => { cancelled = true; }; }
+
+    const loader = new GLTFLoader();
+    loader.register((parser) => new VRMAnimationLoaderPlugin(parser));
+    loader.loadAsync(vrmaUrl)
+      .then((gltf) => {
+        if (cancelled || stateRef.current.vrm !== vrm) return;
+        const anim = gltf.userData.vrmAnimations && gltf.userData.vrmAnimations[0];
+        if (!anim) { toast.error("No animation found in that .vrma"); return; }
+        const clip = createVRMAnimationClip(anim, vrm);
+        ref.vrmaClips[vrmaUrl] = clip;
+        playClip(clip);
+      })
+      .catch((e) => { if (!cancelled) toast.error("Failed to load animation", { description: String(e?.message || e) }); });
+    return () => { cancelled = true; };
+  }, [vrmaUrl]);
+
+  // Live driver: poll Alpecca's real mood/voice state and mirror it onto the
+  // clip + talk-emotion. Her tied facial expression follows automatically. While
+  // she's "talking" we ask for the speaking pose (mouth shapes + emotion overlay).
+  useEffect(() => {
+    if (!alpeccaLive) return undefined;
+    let cancelled = false;
+    const setEmo = useStudioStore.getState().setTalkEmotion;
+    const setStatus = useStudioStore.getState().setAlpeccaStatus;
+    const tick = async () => {
+      try {
+        const speaking = useStudioStore.getState().animationClip === "talking";
+        const r = await api.alpeccaPose(speaking);
+        if (cancelled) return;
+        if (r.ok && r.pose) {
+          const p = r.pose;
+          const vrma = ALPECCA_MOOD_VRMA[p.clip] || ALPECCA_MOOD_VRMA[p.mood];
+          if (vrma) useStudioStore.getState().setVrma(`/vrma/${vrma}.vrma`, vrma);
+          if (p.talk_emotion) setEmo(p.talk_emotion);
+          setStatus(`live · she feels ${p.mood || "?"}`);
+        } else {
+          setStatus(`Alpecca unreachable${r.error ? ` (${String(r.error).slice(0, 32)})` : ""}`);
+        }
+      } catch (e) {
+        if (!cancelled) setStatus("driver error");
+      }
+    };
+    tick();
+    const timer = setInterval(tick, 1500);
+    return () => { cancelled = true; clearInterval(timer); setStatus(""); };
+  }, [alpeccaLive]);
 
   // ---- initial scene setup ----
   useEffect(() => {
@@ -90,10 +213,12 @@ export const VRMViewer = () => {
     const raycaster = new THREE.Raycaster();
 
     const mouse = new THREE.Vector2(0, 0);
+    let lastMouseMove = -99; // elapsed time of last cursor move over the canvas
     const onMouseMove = (e) => {
       const rect = renderer.domElement.getBoundingClientRect();
       mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
       mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+      lastMouseMove = clock.elapsedTime;
     };
     renderer.domElement.addEventListener("mousemove", onMouseMove);
 
@@ -101,10 +226,21 @@ export const VRMViewer = () => {
     scene.add(lookTarget);
 
     // Resize
+    // Bloom pipeline — bright/emissive pixels (rim light, her glowing core emblem)
+    // bloom into a soft halo. Threshold keeps it off ordinary cel color; strength
+    // is store-driven (SettingsDrawer). Selective-emissive bloom is a later refinement.
+    const composer = new EffectComposer(renderer);
+    composer.addPass(new RenderPass(scene, camera));
+    const bloomPass = new UnrealBloomPass(new THREE.Vector2(1, 1), 0.55, 0.4, 0.82);
+    composer.addPass(bloomPass);
+    composer.addPass(new OutputPass());
+
     const resize = () => {
       const w = mount.clientWidth;
       const h = mount.clientHeight;
       renderer.setSize(w, h, false);
+      composer.setSize(w, h);
+      bloomPass.setSize(w, h);
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     };
@@ -112,10 +248,13 @@ export const VRMViewer = () => {
     const ro = new ResizeObserver(resize);
     ro.observe(mount);
 
+    window.__vcs_dbg = { scene, camera, controls, renderer, composer };   // debug handles (tests, framing)
     stateRef.current = {
       scene,
       camera,
       renderer,
+      composer,
+      bloomPass,
       controls,
       lightGroup,
       grid,
@@ -141,51 +280,79 @@ export const VRMViewer = () => {
       const ref = stateRef.current;
       controls.update();
       if (ref.vrm) {
-        // 1) apply base procedural clip (resets rotations first)
-        applyClip(ref.vrm, s.animationClip, t, s.animationSpeed, {
-          customFrames: s.customFrames,
-          loop: s.animationLoop,
-          duration: s.animationDuration,
-          talkEmotion: s.talkEmotion === "neutral" ? null : s.talkEmotion,
-        });
+        const vrmaActive = !!ref.vrmaMixer;
+        // 1) drive the skeleton: a real .vrma clip if one is loaded, else the
+        //    procedural clip (which resets rotations first).
+        if (vrmaActive) {
+          ref.vrmaMixer.update(dt);
+        } else {
+          applyClip(ref.vrm, s.animationClip, t, s.animationSpeed, {
+            customFrames: s.customFrames,
+            loop: s.animationLoop,
+            duration: s.animationDuration,
+            talkEmotion: s.talkEmotion === "neutral" ? null : s.talkEmotion,
+          });
+        }
         // 2) apply user bone offsets on top
         applyBoneOffsets(ref.vrm, s.boneOffsets);
-        // 3) apply expressions from store
+        // 3) expressions
         if (ref.vrm.expressionManager) {
-          // Reset all first
-          (ref.vrm.expressionManager.expressions || []).forEach((exp) => {
-            const name = exp.expressionName || exp.name;
-            const wanted = s.expressions[name];
-            if (typeof wanted === "number") {
-              exp.weight = wanted;
-            } else {
-              exp.weight = 0;
-            }
-          });
-          // Auto-blink overlay
-          if (s.autoBlink) applyAutoBlink(ref.vrm, t);
+          if (vrmaActive) {
+            // The .vrma may carry its own expression tracks (already applied by
+            // the mixer). Let the user's Face-tab values raise on top.
+            (ref.vrm.expressionManager.expressions || []).forEach((exp) => {
+              const w = s.expressions[exp.expressionName || exp.name];
+              if (typeof w === "number" && w > exp.weight) exp.weight = w;
+            });
+          } else {
+            // Reset to the user's Face-tab values, then layer the clip's tied emotion.
+            (ref.vrm.expressionManager.expressions || []).forEach((exp) => {
+              const name = exp.expressionName || exp.name;
+              const wanted = s.expressions[name];
+              exp.weight = typeof wanted === "number" ? wanted : 0;
+            });
+            applyClipExpressions(ref.vrm, s.animationClip, t, { talkEmotion: s.talkEmotion });
+          }
+          if (s.autoBlink && (vrmaActive || !clipHoldsEyesClosed(s.animationClip))) applyAutoBlink(ref.vrm, t);
           ref.vrm.expressionManager.update();
         }
-        // 4) LookAt mouse
+        // 4) LookAt: follow the cursor while it's active over the canvas; when it
+        //    goes idle (or lookAtMouse is off), fall back to natural procedural
+        //    gaze (saccades + aversion) so the eyes never freeze — she stays alive.
         if (ref.vrm.lookAt) {
-          if (s.lookAtMouse) {
-            // Convert mouse ndc to world-ish target near head
-            const head = ref.vrm.humanoid?.getNormalizedBoneNode("head");
-            if (head) {
-              const headWorld = new THREE.Vector3();
-              head.getWorldPosition(headWorld);
-              const targetVec = new THREE.Vector3(mouse.x * 1.2, headWorld.y + mouse.y * 0.6, 1.5);
-              lookTarget.position.copy(targetVec);
-              ref.vrm.lookAt.target = lookTarget;
+          const head = ref.vrm.humanoid?.getNormalizedBoneNode("head");
+          if (head) {
+            const headWorld = new THREE.Vector3();
+            head.getWorldPosition(headWorld);
+            const mouseActive = s.lookAtMouse && (t - lastMouseMove) < 2.5;
+            let gx = mouse.x * 1.2;
+            let gy = headWorld.y + mouse.y * 0.6;
+            if (!mouseActive) {
+              const g = computeGaze(t);
+              gx = g.x * 1.1;
+              gy = headWorld.y + g.y * 0.55;
             }
-          } else {
-            ref.vrm.lookAt.target = null;
+            lookTarget.position.set(gx, gy, 1.5);
+            ref.vrm.lookAt.target = lookTarget;
           }
         }
         ref.vrm.update(dt);
+        // 5) foot grounding: keep her soles on the grid (origin-centered
+        //    exports + clips that dip below ground), easing back for airtime.
+        groundFeet(ref.vrm, ref, dt);
       }
 
-      renderer.render(scene, camera);
+      // Bloom strength is store-driven; emissive materials tagged for a heartbeat
+      // pulse (her core) breathe via emissiveIntensity around their base.
+      if (ref.bloomPass) ref.bloomPass.strength = s.bloomStrength ?? 0.55;
+      const pulse = ref.vrm && ref.vrm.__vcs_emissivePulse;
+      if (pulse && pulse.length) {
+        const k = 1 + 0.18 * Math.sin(t * 2.2);
+        for (const m of pulse) if (m && m.__vcs_emissiveBase != null) m.emissiveIntensity = m.__vcs_emissiveBase * k;
+      }
+
+      if (ref.composer) ref.composer.render();
+      else renderer.render(scene, camera);
     };
     tick();
 
@@ -234,6 +401,9 @@ export const VRMViewer = () => {
         try {
           if (typeof vrm.update === "function") vrm.update(0);
           vrm.scene.updateMatrixWorld(true);
+          // Plant her on the ground FIRST (origin-centered exports load with
+          // feet at ~-0.9) so the framing box sees the corrected position.
+          snapGround(vrm, ref);
 
           const box = computeVRMBoundingBox(vrm);
           const size = new THREE.Vector3();
@@ -417,12 +587,33 @@ function makeGradientTexture() {
 function computeVRMBoundingBox(vrm) {
   const box = new THREE.Box3();
   const tmpBox = new THREE.Box3();
+  const v = new THREE.Vector3();
 
-  // Pass 1: SkinnedMesh + Mesh geometry bounding boxes → world space
+  // Pass 1: POSED skinned vertices → world space. A SkinnedMesh's
+  // geometry.boundingBox is in BIND space, which for origin-centered VRoid
+  // exports is a phantom column (~0→1.8) nowhere near where the bones render
+  // her (~-0.9→0.74) — framing off it puts the camera on the wrong body.
+  // Sampling vertices THROUGH the skinning (applyBoneTransform) measures what
+  // is actually on screen. Sample stride keeps it cheap; bounds don't need
+  // every vertex. Plain (non-skinned) meshes keep the matrixWorld box path.
   let meshCount = 0;
   vrm.scene.traverse((obj) => {
     if (!obj.visible) return;
-    if (obj.isMesh || obj.isSkinnedMesh) {
+    if (obj.isSkinnedMesh && obj.geometry?.attributes?.position && obj.skeleton) {
+      obj.skeleton.update();
+      const pos = obj.geometry.attributes.position;
+      const step = Math.max(1, Math.floor(pos.count / 1200));
+      for (let k = 0; k < pos.count; k += step) {
+        v.fromBufferAttribute(pos, k);
+        if (obj.applyBoneTransform) obj.applyBoneTransform(k, v);      // three r160+
+        else if (obj.boneTransform) obj.boneTransform(k, v);           // older name
+        v.applyMatrix4(obj.matrixWorld);
+        if (Number.isFinite(v.x) && Number.isFinite(v.y) && Number.isFinite(v.z)) {
+          box.expandByPoint(v);
+        }
+      }
+      meshCount++;
+    } else if (obj.isMesh) {
       const geom = obj.geometry;
       if (!geom) return;
       if (!geom.boundingBox) geom.computeBoundingBox();

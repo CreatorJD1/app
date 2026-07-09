@@ -16,20 +16,22 @@ export const EmptyViewport = () => {
       toast.error("Please choose a .vrm file");
       return;
     }
+    // Render immediately from a local blob URL so the studio works with or
+    // without the backend (Claude Code local port: the viewer/animations/pose/
+    // expression editors are all client-side). Backend persistence — creating a
+    // project and uploading the VRM — is best-effort and never blocks rendering.
+    const blobUrl = URL.createObjectURL(file);
+    setVrm(blobUrl, file.name);
     try {
       let proj = project;
       if (!proj) {
         proj = await api.createProject(file.name.replace(/\.vrm$/i, ""));
         setProject(proj);
       }
-      toast.info("Uploading VRM...", { description: file.name });
       await api.uploadVrm(proj.id, file);
-      // Use local blob URL directly for fastest render
-      const blobUrl = URL.createObjectURL(file);
-      setVrm(blobUrl, file.name);
     } catch (e) {
-      console.error(e);
-      toast.error("Upload failed", { description: String(e?.message || e) });
+      // No backend running (or DB offline): keep the local render, just note it.
+      console.warn("VRM persistence skipped (backend unavailable):", e?.message || e);
     }
   };
 

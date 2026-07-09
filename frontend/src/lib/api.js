@@ -12,8 +12,12 @@ export const api = {
     http.post("/generate/texture", { prompt, kind, project_id }).then((r) => r.data),
   generateConcept: (prompt, project_id = null) =>
     http.post("/generate/concept", { prompt, project_id }).then((r) => r.data),
-  generateVariant: ({ prompt, reference_asset_id, reference_data_url, project_id }) =>
-    http.post("/generate/variant", { prompt, reference_asset_id, reference_data_url, project_id }).then((r) => r.data),
+  generateVariant: ({ prompt, reference_asset_id, reference_data_url, reference_data_urls, project_id }) =>
+    http.post("/generate/variant", { prompt, reference_asset_id, reference_data_url, reference_data_urls, project_id }).then((r) => r.data),
+  extractOutfit: ({ reference_data_url, reference_data_urls, notes, provider, project_id }) =>
+    http.post("/extract/outfit", { reference_data_url, reference_data_urls, notes, provider, project_id }).then((r) => r.data),
+  generateMaterialTexture: ({ uv_template_data_url, garment_data_url, original_atlas_data_url, region, description, palette, guard, provider, strength, mode, project_id }) =>
+    http.post("/generate/material_texture", { uv_template_data_url, garment_data_url, original_atlas_data_url, region, description, palette, guard, provider, strength, mode, project_id }).then((r) => r.data),
   generateTurnaround: ({ character_desc, reference_asset_id, reference_data_url, project_id }) =>
     http.post("/generate/turnaround", { character_desc, reference_asset_id, reference_data_url, project_id }).then((r) => r.data),
   generateWardrobe: ({ theme, palette, pieces, project_id }) =>
@@ -43,6 +47,9 @@ export const api = {
     return http.post(`/projects/${project_id}/vrm`, fd, { headers: { "Content-Type": "multipart/form-data" } }).then((r) => r.data);
   },
   vrmUrl: (project_id) => `${API_BASE}/projects/${project_id}/vrm`,
+
+  alpeccaPose: (speaking = false) =>
+    http.get("/alpecca/pose", { params: { speaking } }).then((r) => r.data),
 
   vroidHubHelp: () => http.get("/vroid_hub/help").then((r) => r.data),
   vroidHubImportUrl: ({ project_id, url }) =>

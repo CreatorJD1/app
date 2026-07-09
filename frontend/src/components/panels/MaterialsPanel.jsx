@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { toast } from "sonner";
-import { ChevronDown, ChevronRight, Download, RotateCcw, Sliders, Sparkles, Undo2, Grid3x3 } from "lucide-react";
+import { ChevronDown, ChevronRight, Download, RotateCcw, Sliders, Sparkles, Undo2, Grid3x3, Zap } from "lucide-react";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Slider } from "@/components/ui/slider";
@@ -17,6 +17,9 @@ import {
   updateMaterialTransform,
   restoreMaterial,
   extractUvTemplate,
+  applyEmissive,
+  clearEmissive,
+  matchAlpeccaDesign,
   classifyMaterial,
   CATEGORY_ORDER,
   CATEGORY_LABELS,
@@ -33,11 +36,57 @@ export const MaterialsPanel = () => {
   const resetMaterialTransform = useStudioStore((s) => s.resetMaterialTransform);
   const clearAssignment = useStudioStore((s) => s.clearMaterialAssignment);
   const setPendingUvReference = useStudioStore((s) => s.setPendingUvReference);
+  const bloomStrength = useStudioStore((s) => s.bloomStrength);
+  const setBloomStrength = useStudioStore((s) => s.setBloomStrength);
 
   const [assets, setAssets] = useState([]);
   const [selected, setSelected] = useState({}); // materialName -> assetId
   const [openGroups, setOpenGroups] = useState({ face: true, hair: true, top: true });
   const [openControls, setOpenControls] = useState({}); // materialName -> boolean
+  const [glowing, setGlowing] = useState({}); // materialName -> boolean
+
+  const [matchingHair, setMatchingHair] = useState(false);
+  const doMatchDesign = async () => {
+    const vrm = window.__vcs_vrm;
+    if (!vrm) return toast.error("No VRM loaded");
+    setMatchingHair(true);
+    try {
+      const result = await matchAlpeccaDesign(vrm);
+      toast.success("Matched to design", {
+        description: [
+          result.hair ? "hair gradient" : null,
+          result.choker ? "choker navy" : null,
+          result.outfit ? "outfit palette" : null,
+          result.accessories ? "blue accessories" : null,
+        ].filter(Boolean).join(" · ") || "No matching material names found",
+      });
+    } catch (e) {
+      toast.error("Design match failed", { description: String(e?.message || e) });
+    } finally {
+      setMatchingHair(false);
+    }
+  };
+
+  const toggleGlow = async (matName) => {
+    const vrm = window.__vcs_vrm;
+    if (!vrm) return toast.error("No VRM loaded");
+    try {
+      if (glowing[matName]) {
+        clearEmissive(vrm, matName);
+        setGlowing((s) => ({ ...s, [matName]: false }));
+        toast.info(`Glow off · ${matName}`);
+      } else {
+        const n = await applyEmissive(vrm, matName, { intensity: 1.8, pulse: true });
+        if (n === 0) return toast.warning("No glow-able surface here", {
+          description: "This material is unsaturated (white/grey fabric) or has no emissive slot — saturated accents like her core, eyes and trim glow best.",
+        });
+        setGlowing((s) => ({ ...s, [matName]: true }));
+        toast.success(`Glow on · ${matName}`, { description: "Self-lit in its own colour, with a bloom halo + heartbeat" });
+      }
+    } catch (e) {
+      toast.error("Glow failed", { description: String(e?.message || e) });
+    }
+  };
 
   const loadAssets = async () => {
     try {
@@ -174,6 +223,29 @@ export const MaterialsPanel = () => {
             </div>
           )}
 
+          {availableMaterials.length > 0 && (
+            <div className="flex items-center gap-2 rounded-md bg-black/20 px-2 py-1.5 border border-border/40" data-testid="bloom-row">
+              <Zap size={12} className="text-primary shrink-0" />
+              <span className="text-[10px] font-mono uppercase tracking-wider text-muted-foreground w-12 shrink-0">Bloom</span>
+              <Slider value={[bloomStrength]} min={0} max={1.5} step={0.05} onValueChange={([v]) => setBloomStrength(v)} data-testid="bloom-strength" />
+              <span className="text-[10px] font-mono tabular-nums w-8 text-right text-foreground/80">{Number(bloomStrength).toFixed(2)}</span>
+            </div>
+          )}
+
+          {availableMaterials.length > 0 && (
+            <Button
+              data-testid="match-hair"
+              size="sm"
+              variant="secondary"
+              className="h-7 text-[11px] w-full"
+              onClick={doMatchDesign}
+              disabled={matchingHair}
+              title="Match her to the design-lock art: hair gradient, navy choker, ivory outfit, pale-blue accents, white stockings, cream-blue boots, and blue clip/accessories when matching materials exist"
+            >
+              <Sparkles size={12} className="mr-1" /> {matchingHair ? "Matching…" : "Match to design"}
+            </Button>
+          )}
+
           {nonEmptyGroups.map((cat) => (
             <div key={cat} data-testid={`materials-group-${cat}`}>
               <button
@@ -277,6 +349,17 @@ export const MaterialsPanel = () => {
                             <Sliders size={12} className="mr-1" /> Fit
                           </Button>
                         </div>
+
+                        <Button
+                          data-testid={`material-glow-${m.name}`}
+                          size="sm"
+                          variant={glowing[m.name] ? "default" : "secondary"}
+                          className="h-7 text-[11px] w-full mt-1.5"
+                          onClick={() => toggleGlow(m.name)}
+                          title="Self-illuminate this material's bright regions (her core emblem, neon accents) with a bloom halo + heartbeat pulse"
+                        >
+                          <Zap size={12} className="mr-1" /> {glowing[m.name] ? "Glowing" : "Glow"}
+                        </Button>
 
                         {controlsOpen && (
                           <div className="mt-2 rounded-md bg-black/30 p-2 space-y-2 border border-border/40">

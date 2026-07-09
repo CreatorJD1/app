@@ -5,6 +5,15 @@ function getBone(vrm, name) {
   return vrm?.humanoid?.getNormalizedBoneNode(name);
 }
 
+// All clips here are authored in the VRM 1.0 normalized-bone frame (the models
+// Alpecca exports). three-vrm's normalized bones invert local x/z rotation on a
+// VRM 0.x model, so for a 0.x model every clip is negated on x/z to match. On a
+// 1.0 model the clips play as authored.
+function _isVRM0(vrm) {
+  const meta = vrm?.meta || {};
+  return meta.metaVersion === "0" || !!meta.title;
+}
+
 const ANIMATED_BONES = [
   "leftUpperArm", "rightUpperArm", "leftLowerArm", "rightLowerArm",
   "leftHand", "rightHand",
@@ -34,6 +43,10 @@ export function applyClip(vrm, clip, timeSec, speed = 1, extras = {}) {
   const hips = getBone(vrm, "hips");
   if (hips) hips.position.set(0, 0, 0);
 
+  // Clips are authored 1.0-native; only a 0.x model needs the x/z negation.
+  const isV0 = vrm.__isV0 ?? (vrm.__isV0 = _isVRM0(vrm));
+  const flip = isV0 ? -1 : 1;
+
   relaxArms(vrm);
 
   switch (clip) {
@@ -59,11 +72,22 @@ export function applyClip(vrm, clip, timeSec, speed = 1, extras = {}) {
     case "custom": custom(vrm, t, extras.customFrames); break;
     default: break;
   }
+
+  // Normalize the authored clip into the model's bone frame. 'custom' timelines
+  // are recorded live in the rendered frame, so leave them untouched.
+  if (clip !== "custom" && flip < 0) {
+    ANIMATED_BONES.forEach((n) => {
+      const b = getBone(vrm, n);
+      if (b) { b.rotation.x *= -1; b.rotation.z *= -1; }
+    });
+  }
 }
 
+// Rest arms down at the sides (VRM 1.0 frame): the left upper arm rests at
+// z=-1.2, raising it needs +z. applyClip flips this for 0.x models.
 function relaxArms(vrm) {
-  const l = getBone(vrm, "leftUpperArm"); if (l) l.rotation.z = 1.2;
-  const r = getBone(vrm, "rightUpperArm"); if (r) r.rotation.z = -1.2;
+  const l = getBone(vrm, "leftUpperArm"); if (l) l.rotation.z = -1.2;
+  const r = getBone(vrm, "rightUpperArm"); if (r) r.rotation.z = 1.2;
 }
 
 function idle(vrm, t) {
@@ -95,16 +119,19 @@ function wave(vrm, t) {
   if (hand) hand.rotation.z = Math.sin(t * 6) * 0.3;
 }
 
+// NATIVE_1_0: authored in the VRM 1.0 frame (ported from the proven Alpecca /vrm
+// renderer). ±2.2 puts both hands up overhead; Emergent's original ±3.0 overshot
+// half a turn and landed the arms horizontal.
 function cheer(vrm, t) {
   const lu = getBone(vrm, "leftUpperArm"), ru = getBone(vrm, "rightUpperArm");
   const ll = getBone(vrm, "leftLowerArm"), rl = getBone(vrm, "rightLowerArm");
   const chest = getBone(vrm, "chest") || getBone(vrm, "upperChest");
   const head = getBone(vrm, "head");
   const beat = Math.sin(t * 5);
-  if (lu) { lu.rotation.z = 3.0; lu.rotation.x = -0.4 - Math.abs(beat) * 0.15; }
-  if (ru) { ru.rotation.z = -3.0; ru.rotation.x = -0.4 - Math.abs(beat) * 0.15; }
-  if (ll) ll.rotation.x = -0.3 + beat * 0.2;
-  if (rl) rl.rotation.x = -0.3 - beat * 0.2;
+  if (lu) lu.rotation.z = 2.2 + Math.abs(beat) * 0.15;
+  if (ru) ru.rotation.z = -2.2 - Math.abs(beat) * 0.15;
+  if (ll) ll.rotation.z = 0.3 + beat * 0.15;    // elbows folded a touch, pulsing
+  if (rl) rl.rotation.z = -0.3 - beat * 0.15;
   if (chest) chest.rotation.x = beat * 0.05;
   if (head) head.rotation.x = -beat * 0.08;
 }
@@ -120,21 +147,24 @@ function bow(vrm, t) {
   const spine = getBone(vrm, "spine");
   const chest = getBone(vrm, "chest") || getBone(vrm, "upperChest");
   const head = getBone(vrm, "head");
-  const bend = amt * 0.9;
+  const bend = amt * 0.62;   // a polite ~30° bow, not folded to the knees
   if (spine) spine.rotation.x = bend * 0.5;
   if (chest) chest.rotation.x = bend * 0.4;
   if (head) head.rotation.x = bend * 0.15;
 }
 
+// NATIVE_1_0: fold the forearm up in the frontal plane so the hand rests near her
+// chin. Emergent's original folded the elbow around x on a sideways arm, which is
+// a twist — the arm just stuck straight out. Ported from the Alpecca /vrm renderer.
 function thinking(vrm, t) {
   const ru = getBone(vrm, "rightUpperArm");
   const rl = getBone(vrm, "rightLowerArm");
   const rh = getBone(vrm, "rightHand");
   const head = getBone(vrm, "head");
   const chest = getBone(vrm, "chest") || getBone(vrm, "upperChest");
-  if (ru) { ru.rotation.z = -0.5; ru.rotation.x = -0.5; }
-  if (rl) rl.rotation.x = -1.9;
-  if (rh) rh.rotation.z = 0.4;
+  if (ru) { ru.rotation.z = 0.9; ru.rotation.y = 0.25; }
+  if (rl) { rl.rotation.z = -2.5; rl.rotation.y = 0.5; }
+  if (rh) rh.rotation.z = -0.5;
   if (head) { head.rotation.z = -0.15; head.rotation.x = 0.08; head.rotation.y = Math.sin(t * 0.5) * 0.1; }
   if (chest) chest.rotation.z = 0.05;
 }
@@ -142,14 +172,14 @@ function thinking(vrm, t) {
 function handsOnHips(vrm, t) {
   const lu = getBone(vrm, "leftUpperArm"), ru = getBone(vrm, "rightUpperArm");
   const ll = getBone(vrm, "leftLowerArm"), rl = getBone(vrm, "rightLowerArm");
-  const lh = getBone(vrm, "leftHand"), rh = getBone(vrm, "rightHand");
   const chest = getBone(vrm, "chest") || getBone(vrm, "upperChest");
-  if (lu) { lu.rotation.z = 1.0; lu.rotation.x = -0.05; lu.rotation.y = -0.3; }
-  if (ru) { ru.rotation.z = -1.0; ru.rotation.x = -0.05; ru.rotation.y = 0.3; }
-  if (ll) { ll.rotation.x = -1.6; ll.rotation.z = 0.4; }
-  if (rl) { rl.rotation.x = -1.6; rl.rotation.z = -0.4; }
-  if (lh) lh.rotation.z = 0.3;
-  if (rh) rh.rotation.z = -0.3;
+  // 1.0-native: upper arms hang near the sides with the elbows swung out and
+  // back; forearms fold moderately forward-and-in so the hands settle on the
+  // waist (too strong a fold lifts the hands up to the head).
+  if (lu) { lu.rotation.z = -1.0; lu.rotation.y = 0.4; }
+  if (ru) { ru.rotation.z = 1.0; ru.rotation.y = -0.4; }
+  if (ll) { ll.rotation.z = 1.4; ll.rotation.y = -0.5; }
+  if (rl) { rl.rotation.z = -1.4; rl.rotation.y = 0.5; }
   if (chest) chest.rotation.y = Math.sin(t * 0.9) * 0.05;
 }
 
@@ -237,8 +267,10 @@ function run(vrm, t) {
   if (rUp) rUp.rotation.x = -swing * 1.05;
   if (lLo) lLo.rotation.x = -Math.max(0, -swing) * 1.6;
   if (rLo) rLo.rotation.x = -Math.max(0, swing) * 1.6;
-  if (luA) { luA.rotation.z = 1.0; luA.rotation.x = -0.2 + swing * 0.9; }
-  if (ruA) { ruA.rotation.z = -1.0; ruA.rotation.x = -0.2 - swing * 0.9; }
+  // Arms stay down at the sides (relaxArms rest z), elbows bent ~90°, pumping
+  // forward/back opposite the legs.
+  if (luA) luA.rotation.x = -0.2 + swing * 0.9;
+  if (ruA) ruA.rotation.x = -0.2 - swing * 0.9;
   if (llA) llA.rotation.x = -1.6;
   if (rlA) rlA.rotation.x = -1.6;
   if (spine) spine.rotation.x = 0.18;
@@ -293,25 +325,22 @@ function sit(vrm, t) {
   if (hips) hips.position.y = -0.35;
 }
 
+// 1.0-native (from the Alpecca /vrm renderer): head down, shoulders hunched,
+// elbows folded up in the frontal plane so both hands come to her face, shaking.
 function cry(vrm, t) {
-  // Head down, shoulders hunched, hands to face, small shakes
   const head = getBone(vrm, "head");
   const spine = getBone(vrm, "spine");
   const chest = getBone(vrm, "chest") || getBone(vrm, "upperChest");
   const lu = getBone(vrm, "leftUpperArm"), ru = getBone(vrm, "rightUpperArm");
   const ll = getBone(vrm, "leftLowerArm"), rl = getBone(vrm, "rightLowerArm");
-  const lh = getBone(vrm, "leftHand"), rh = getBone(vrm, "rightHand");
   const shake = Math.sin(t * 8) * 0.03;
   if (spine) spine.rotation.x = 0.25;
   if (chest) chest.rotation.x = 0.2 + shake;
   if (head) { head.rotation.x = 0.4; head.rotation.z = shake * 3; }
-  // Hands up to face
-  if (lu) { lu.rotation.z = 0.6; lu.rotation.x = -0.4; }
-  if (ru) { ru.rotation.z = -0.6; ru.rotation.x = -0.4; }
-  if (ll) ll.rotation.x = -2.0;
-  if (rl) rl.rotation.x = -2.0;
-  if (lh) lh.rotation.x = -0.3;
-  if (rh) rh.rotation.x = -0.3;
+  if (lu) { lu.rotation.z = -0.9; lu.rotation.y = -0.35; }
+  if (ru) { ru.rotation.z = 0.9; ru.rotation.y = 0.35; }
+  if (ll) { ll.rotation.z = 2.5; ll.rotation.y = -0.5; }
+  if (rl) { rl.rotation.z = -2.5; rl.rotation.y = 0.5; }
 }
 
 function scream(vrm, t) {
@@ -331,13 +360,7 @@ function scream(vrm, t) {
   if (ru) { ru.rotation.z = -2.6; ru.rotation.x = -0.6; }
   if (ll) ll.rotation.x = -0.4;
   if (rl) rl.rotation.x = -0.4;
-  // Drive mouth "aa" if expression available
-  if (vrm.expressionManager) {
-    const aa = vrm.expressionManager.getExpression("aa");
-    if (aa) aa.weight = Math.max(aa.weight, 0.9 + Math.sin(t * 6) * 0.1);
-    const surprised = vrm.expressionManager.getExpression("surprised");
-    if (surprised) surprised.weight = Math.max(surprised.weight, 0.8);
-  }
+  // Mouth + surprised face are tied in via applyClipExpressions().
 }
 
 function die(vrm, t) {
@@ -385,51 +408,18 @@ function sleep(vrm, t) {
   if (rLo) rLo.rotation.x = -1.5;
   if (spine) spine.rotation.x = 0.3;
   if (chest) chest.rotation.x = 0.2 + breath;
-  if (head) { head.rotation.x = 0.7; head.rotation.z = 0.2; }
-  if (lu) { lu.rotation.z = 1.4; lu.rotation.x = -0.15; }
-  if (ru) { ru.rotation.z = -1.4; ru.rotation.x = -0.15; }
+  if (head) { head.rotation.x = 0.5; head.rotation.z = 0.35; }   // lolls to the side
+  if (lu) { lu.rotation.z = -1.4; lu.rotation.x = -0.15; }   // arms resting (1.0 frame)
+  if (ru) { ru.rotation.z = 1.4; ru.rotation.x = -0.15; }
   if (hips) hips.position.y = -0.35;
-  // Closed eyes if blink expression available
-  if (vrm.expressionManager) {
-    const blink = vrm.expressionManager.getExpression("blink");
-    if (blink) blink.weight = 1.0;
-    const relaxed = vrm.expressionManager.getExpression("relaxed");
-    if (relaxed) relaxed.weight = Math.max(relaxed.weight, 0.6);
-  }
+  // Closed eyes + relaxed face are tied in via applyClipExpressions().
 }
 
-// Talking: cycles mouth shapes (aa/ih/ou/ee/oh) at natural cadence.
-// emotion (optional): "happy" | "sad" | "angry" | "surprised" \u2014 overlays that expression.
-function talking(vrm, t, emotion) {
-  // Very light idle sway
+// Talking: light idle sway + a head bob for emphasis. The mouth-shape cycling
+// and the emotion overlay are time-driven expressions, applied in
+// applyClipExpressions() (which runs after the viewer resets expressions).
+function talking(vrm, t /*, emotion */) {
   idle(vrm, t * 0.5);
-  if (!vrm.expressionManager) return;
-  const em = vrm.expressionManager;
-  const shapes = ["aa", "ih", "ou", "ee", "oh"];
-  // Envelope: fast attack/release with mostly-mid amplitude
-  // Cycle a shape every ~0.25s using a pseudo-random selector.
-  const cycleLen = 0.28;
-  const idx = Math.floor(t / cycleLen);
-  const local = (t % cycleLen) / cycleLen;
-  const envelope = Math.sin(local * Math.PI) * (0.55 + 0.35 * Math.sin(t * 3.0));
-  // Reset mouth shapes we control
-  shapes.forEach((s) => {
-    const e = em.getExpression(s); if (e) e.weight = 0;
-  });
-  const activeShape = shapes[idx % shapes.length];
-  const active = em.getExpression(activeShape);
-  if (active) active.weight = Math.max(0, envelope);
-
-  // Emotion overlay
-  if (emotion) {
-    const map = { happy: "happy", sad: "sad", angry: "angry", surprised: "surprised", relaxed: "relaxed" };
-    const target = map[emotion];
-    if (target) {
-      const e = em.getExpression(target);
-      if (e) e.weight = Math.max(e.weight, 0.55);
-    }
-  }
-  // Small head bob for emphasis
   const head = getBone(vrm, "head");
   if (head) head.rotation.x += Math.sin(t * 4) * 0.02;
 }
@@ -470,6 +460,93 @@ export function applyAutoBlink(vrm, time) {
   else if (local < 0.3) v = 1 - (local - 0.15) / 0.15;
   const existing = blink.weight;
   if (v > existing) blink.weight = v;
+}
+
+// ---- Procedural gaze: natural saccades + gaze-aversion (ChatVRM AutoLookAt) ----
+// When the user isn't actively steering the eyes with the mouse, the eyes should
+// still move: brief fixations, occasional aversions (look away/down), smooth
+// pursuit between them. Returns a small normalized {x,y} gaze offset. One VRM at
+// a time, so a module-level accumulator is fine.
+const _gaze = { next: 0, cur: { x: 0, y: 0 }, tgt: { x: 0, y: 0 } };
+export function computeGaze(time) {
+  if (time >= _gaze.next) {
+    const avert = Math.random() < 0.3; // occasionally look away/down
+    _gaze.tgt.x = (Math.random() * 2 - 1) * (avert ? 0.55 : 0.3);
+    _gaze.tgt.y = (Math.random() * 2 - 1) * 0.18 - (avert ? 0.12 : 0.03);
+    _gaze.next = time + 0.8 + Math.random() * 2.4; // fixation 0.8–3.2s
+  }
+  // smooth pursuit toward the current fixation point
+  _gaze.cur.x += (_gaze.tgt.x - _gaze.cur.x) * 0.1;
+  _gaze.cur.y += (_gaze.tgt.y - _gaze.cur.y) * 0.1;
+  return _gaze.cur;
+}
+
+// ---- Facial expressions tied to each clip's emotion ----
+// Static preset weights layered over the user's Face-tab settings (whichever is
+// stronger wins). "blink" here means the clip holds the eyes closed (sleep/die),
+// which also suppresses the auto-blink. Time-driven mouths (talking, scream) are
+// handled procedurally below, not here.
+const CLIP_EXPRESSIONS = {
+  idle:      { relaxed: 0.2 },
+  idle_soft: { relaxed: 0.35 },
+  wave:      { happy: 0.7 },
+  cheer:     { happy: 1.0 },
+  bow:       { relaxed: 0.3 },
+  thinking:  { relaxed: 0.15 },
+  hands_hip: { happy: 0.45 },
+  peace:     { happy: 0.85 },
+  talking:   {},
+  cry:       { sad: 1.0 },
+  scream:    { surprised: 1.0 },
+  sleep:     { relaxed: 0.7, blink: 1.0 },
+  die:       { blink: 1.0 },
+  dance:     { happy: 0.85 },
+  kpop:      { happy: 0.9 },
+  walk:      { relaxed: 0.2 },
+  run:       { surprised: 0.25 },
+  jump:      { happy: 0.6 },
+  sit:       { relaxed: 0.35 },
+};
+
+const MOUTH_SHAPES = ["aa", "ih", "ou", "ee", "oh"];
+
+// Whether a clip holds the eyes closed (so the viewer skips auto-blink).
+export function clipHoldsEyesClosed(clip) {
+  const e = CLIP_EXPRESSIONS[clip];
+  return !!(e && "blink" in e);
+}
+
+// Apply the emotion tied to the current clip. Call AFTER resetting expressions
+// to the user's Face-tab values so the clip's emotion layers on top (max), and
+// BEFORE expressionManager.update(). talkEmotion overrides the talking overlay.
+export function applyClipExpressions(vrm, clip, t, extras = {}) {
+  const em = vrm?.expressionManager;
+  if (!em) return;
+  const atLeast = (name, v) => {
+    if (!name) return;
+    const e = em.getExpression(name);
+    if (e) e.weight = Math.max(e.weight, v);
+  };
+
+  const preset = CLIP_EXPRESSIONS[clip] || {};
+  for (const name in preset) atLeast(name, preset[name]);
+
+  if (clip === "talking") {
+    // Cycle a mouth shape every ~0.28s at a speaking cadence.
+    const cyc = 0.28;
+    const idx = Math.floor(t / cyc);
+    const local = (t % cyc) / cyc;
+    const env = Math.max(0, Math.sin(local * Math.PI) * (0.55 + 0.35 * Math.sin(t * 3.0)));
+    const active = MOUTH_SHAPES[idx % MOUTH_SHAPES.length];
+    const a = em.getExpression(active);
+    if (a) a.weight = Math.max(a.weight, env);
+    const emo = extras.talkEmotion;
+    if (emo && emo !== "neutral") atLeast(emo, 0.55);
+  } else if (clip === "scream") {
+    // Wide-open "aa" mouth, pulsing.
+    const a = em.getExpression("aa");
+    if (a) a.weight = Math.max(a.weight, 0.9 + Math.sin(t * 6) * 0.1);
+  }
 }
 
 export const CLIP_META = [

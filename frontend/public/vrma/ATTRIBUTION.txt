@@ -1,0 +1,1 @@
+﻿VRMA animation clips from github.com/tk256ailab/vrm-viewer (MIT, (c) 2025 TK256). test.vrma from pixiv/three-vrm (MIT).

@@ -2,21 +2,24 @@
 from __future__ import annotations
 
 import logging
+import os
 import re
 from pathlib import Path
 from typing import List, Optional
 
+import httpx
 from fastapi import APIRouter, HTTPException, UploadFile, File
 from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from ai_service import (
     generate_texture, generate_concept, generate_variant, generate_turnaround,
-    generate_wardrobe, generate_accessories, analyze_character,
+    generate_wardrobe, generate_accessories, analyze_character, extract_outfit,
+    generate_material_texture,
 )
 from models import (
     Asset, Project, ProjectCreate, ProjectUpdate,
-    TextureRequest, ConceptRequest, VariantRequest, TurnaroundRequest,
+    TextureRequest, ConceptRequest, VariantRequest, TurnaroundRequest, OutfitRequest,
     now_iso,
 )
 
@@ -91,22 +94,105 @@ async def api_generate_concept(req: ConceptRequest):
 
 @router.post("/generate/variant")
 async def api_generate_variant(req: VariantRequest):
-    ref_b64 = None
+    refs = []
     if req.reference_asset_id:
         ref = await _get_asset(req.reference_asset_id)
         if not ref:
             raise HTTPException(status_code=404, detail="reference_asset_id not found")
-        ref_b64 = _extract_b64(ref.data_url)
-    elif req.reference_data_url:
-        ref_b64 = _extract_b64(req.reference_data_url)
-    else:
-        raise HTTPException(status_code=400, detail="reference_asset_id or reference_data_url required")
+        refs.append(_extract_b64(ref.data_url))
+    for du in (req.reference_data_urls or []):
+        b = _extract_b64(du)
+        if b:
+            refs.append(b)
+    if not refs and req.reference_data_url:
+        refs.append(_extract_b64(req.reference_data_url))
+    refs = [b for b in refs if b]
+    if not refs:
+        raise HTTPException(status_code=400, detail="reference_asset_id, reference_data_url or reference_data_urls required")
     try:
-        result = await generate_variant(req.prompt, ref_b64)
+        result = await generate_variant(req.prompt, refs)
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Generation failed: {e}")
     asset = await _save_asset(req.project_id, "variant", None, result["prompt"], result["images"][0])
     return {"asset": asset.model_dump()}
+
+
+class MaterialTextureRequest(BaseModel):
+    uv_template_data_url: Optional[str] = None   # the material's UV/seam layout (wireframe)
+    garment_data_url: Optional[str] = None        # the target garment/design reference
+    original_atlas_data_url: Optional[str] = None # the material's ORIGINAL diffuse atlas (restyle init)
+    region: str = "garment"                       # top | bottom | hair | shoes | ...
+    description: str = ""
+    palette: Optional[str] = None
+    guard: bool = True
+    provider: Optional[str] = None                # zerogpu | local | cloud | hybrid | auto
+    strength: Optional[float] = None              # img2img denoise (restyle ~0.32, bold ~0.75)
+    mode: str = "restyle"                         # restyle (subtle, low denoise) | bold (ControlNet UV-lock)
+    project_id: Optional[str] = None
+
+
+@router.post("/generate/material_texture")
+async def api_generate_material_texture(req: MaterialTextureRequest):
+    """Goal 2: paint a UV-fitted anime texture for one model material. Preferred
+    path restyles the material's ORIGINAL atlas (UV-safe); falls back to the UV
+    template + garment reference. Guarded against off-goal/deviant output."""
+    uv = _extract_b64(req.uv_template_data_url) if req.uv_template_data_url else None
+    garment = _extract_b64(req.garment_data_url) if req.garment_data_url else None
+    atlas = _extract_b64(req.original_atlas_data_url) if req.original_atlas_data_url else None
+    if not uv and not garment and not atlas:
+        raise HTTPException(status_code=400, detail="original_atlas_data_url, uv_template_data_url or garment_data_url required")
+    try:
+        result = await generate_material_texture(
+            uv, garment, region=req.region, description=req.description,
+            palette=req.palette, guard=req.guard, provider=req.provider,
+            original_atlas_b64=atlas, strength=req.strength, mode=req.mode,
+        )
+    except Exception as e:
+        logger.exception("material_texture failed")
+        raise HTTPException(status_code=502, detail=f"Generation failed: {e}")
+    asset = await _save_asset(req.project_id, "texture", req.region, result["prompt"], result["images"][0])
+    return {"asset": asset.model_dump(), "guard": result.get("guard"), "mode": result.get("mode")}
+
+
+@router.post("/extract/outfit")
+async def api_extract_outfit(req: OutfitRequest):
+    refs = [_extract_b64(du) for du in (req.reference_data_urls or []) if du]
+    if not refs and req.reference_data_url:
+        refs = [_extract_b64(req.reference_data_url)]
+    refs = [b for b in refs if b]
+    if not refs:
+        raise HTTPException(status_code=400, detail="reference_data_url or reference_data_urls required")
+    try:
+        outfit = await extract_outfit(refs, notes=req.notes, provider=req.provider)
+    except Exception as e:
+        logger.exception("extract_outfit failed")
+        raise HTTPException(status_code=502, detail=f"Outfit extraction failed: {e}")
+    return {"outfit": outfit}
+
+
+# ---------- Live driver: proxy Alpecca's real mood/voice state ----------
+@router.get("/alpecca/pose")
+async def api_alpecca_pose(speaking: bool = False):
+    """Server-side proxy to the running Alpecca app's /vrm/pose endpoint, which
+    returns the clip + talk_emotion + expressions derived from her live emotional
+    state (the same state that drives her voice). Proxying avoids browser CORS and
+    keeps the Alpecca token server-side. Set ALPECCA_URL / ALPECCA_TOKEN in the
+    VCS backend env. Returns {ok, pose} or {ok:false, error} — never raises, so the
+    driver degrades quietly when Alpecca isn't running."""
+    base = os.getenv("ALPECCA_URL", "http://127.0.0.1:8765").rstrip("/")
+    token = os.getenv("ALPECCA_TOKEN", "")
+    params = {"speaking": "true" if speaking else "false"}
+    headers = {}
+    if token:
+        params["token"] = token
+        headers["X-Alpecca-Token"] = token
+    try:
+        async with httpx.AsyncClient(timeout=4.0) as client:
+            r = await client.get(f"{base}/vrm/pose", params=params, headers=headers)
+            r.raise_for_status()
+            return {"ok": True, "pose": r.json()}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
 
 
 @router.post("/generate/turnaround")

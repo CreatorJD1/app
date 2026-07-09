@@ -79,7 +79,16 @@ class ConceptRequest(BaseModel):
 class VariantRequest(BaseModel):
     prompt: str
     reference_asset_id: Optional[str] = None
-    reference_data_url: Optional[str] = None  # base64 data url alternative
+    reference_data_url: Optional[str] = None  # single base64 data url (kept for back-compat)
+    reference_data_urls: Optional[List[str]] = None  # multiple reference images (fused)
+    project_id: Optional[str] = None
+
+
+class OutfitRequest(BaseModel):
+    reference_data_url: Optional[str] = None
+    reference_data_urls: Optional[List[str]] = None  # one or more angles of the same character
+    notes: str = ""
+    provider: Optional[str] = None                   # local | cloud | hybrid | auto
     project_id: Optional[str] = None
 
 
