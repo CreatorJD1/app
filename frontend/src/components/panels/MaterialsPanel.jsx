@@ -55,7 +55,6 @@ export const MaterialsPanel = () => {
       toast.success("Matched to design", {
         description: [
           result.hair ? "hair gradient" : null,
-          result.choker ? "choker navy" : null,
           result.outfit ? "outfit palette" : null,
           result.accessories ? "blue accessories" : null,
         ].filter(Boolean).join(" · ") || "No matching material names found",
@@ -240,7 +239,7 @@ export const MaterialsPanel = () => {
               className="h-7 text-[11px] w-full"
               onClick={doMatchDesign}
               disabled={matchingHair}
-              title="Match her to the design-lock art: hair gradient, navy choker, ivory outfit, pale-blue accents, white stockings, cream-blue boots, and blue clip/accessories when matching materials exist"
+              title="Match her to the design-lock art: hair gradient, ivory outfit, pale-blue accents, white stockings, cream-blue boots, and blue clip/accessories when matching materials exist"
             >
               <Sparkles size={12} className="mr-1" /> {matchingHair ? "Matching…" : "Match to design"}
             </Button>

@@ -254,7 +254,7 @@ export async function applyTexture(vrm, materialName, dataUrl, transform = null)
     snapshotOriginal(mat);
     mat.map = texture;
     // A full generated texture is self-coloured, so we neutralise the base color
-    // multiplier to white. But an in-place RECOLOR (hair gradient, choker) keeps
+    // multiplier to white. But an in-place RECOLOR (hair gradient) keeps
     // the atlas's own colours and must NOT lose the material's tint (e.g. her
     // ivory jacket #f7efe7) — pass transform.preserveColor for those.
     if (mat.color && !transform?.preserveColor) mat.color.set(0xffffff);
@@ -523,52 +523,6 @@ export async function matchAlpeccaHair(vrm) {
   return count;
 }
 
-// Her choker reads bright cobalt in the proxy but her canon is a dark navy. It's
-// baked into the body-skin (and a little into the tops) atlas — not a colour
-// uniform — so we recolour only the SATURATED-cobalt pixels to navy, sparing the
-// pale-blue trim, the hair gradient, boot accents, and eyes.
-export async function matchAlpeccaChoker(vrm) {
-  const targets = ["Body_00_SKIN", "Tops_01_CLOTH_01", "Tops_01_CLOTH_02", "Onepiece_00_CLOTH_01"];
-  const jobs = [];
-  vrm.scene.traverse((o) => {
-    if (!o.isMesh || !o.material) return;
-    (Array.isArray(o.material) ? o.material : [o.material]).forEach((m) => {
-      if (!m || !m.map || !m.map.image || m.name.includes("Outline")) return;
-      if (!targets.some((t) => m.name.includes(t)) || m.__chokerFix) return;
-      if (!jobs.find((j) => j.name === m.name)) jobs.push(m);
-    });
-  });
-  let total = 0;
-  for (const m of jobs) {
-    const s = m.map.image, w = s.width || s.naturalWidth, h = s.height || s.naturalHeight;
-    if (!w || !h) continue;
-    const cv = document.createElement("canvas");
-    cv.width = w; cv.height = h;
-    const cx = cv.getContext("2d", { willReadFrequently: true });
-    try { cx.drawImage(s, 0, 0, w, h); } catch (_) { continue; }
-    let im;
-    try { im = cx.getImageData(0, 0, w, h); } catch (_) { continue; }
-    const d = im.data; let n = 0;
-    for (let i = 0; i < d.length; i += 4) {
-      if (d[i + 3] < 8) continue;
-      const r = d[i], g = d[i + 1], b = d[i + 2];
-      const mx = Math.max(r, g, b), mn = Math.min(r, g, b);
-      const sat = mx > 0 ? (mx - mn) / mx : 0;
-      const lum = (0.299 * r + 0.587 * g + 0.114 * b) / 255;
-      if (sat > 0.5 && b === mx && b > 90 && lum > 0.15 && lum < 0.7) {
-        d[i] = Math.round(18 + lum * 34); d[i + 1] = Math.round(26 + lum * 44); d[i + 2] = Math.round(66 + lum * 72); n++;
-      }
-    }
-    if (n > 0) {
-      cx.putImageData(im, 0, 0);
-      await applyTexture(vrm, m.name, cv.toDataURL("image/png"), { flipY: m.map.flipY, preserveColor: true });
-      m.__chokerFix = 1;
-      total += n;
-    }
-  }
-  return total;
-}
-
 async function _matchAlpeccaBoots(vrm) {
   const mats = _materialNames(vrm, (_m, name) => classifyMaterial(name) === "shoes");
   let count = 0;
@@ -614,7 +568,7 @@ async function _matchAlpeccaAccessories(vrm) {
   for (const name of clipMats) {
     count += await applyShadedTint(vrm, name, "#276BFF", { amount: 0.78, boost: 1.22 });
   }
-  const lanyardMats = _materialNames(vrm, (_m, name) => /lanyard|badge|necklace|strap|tie/i.test(name));
+  const lanyardMats = _materialNames(vrm, (_m, name) => /lanyard|badge|strap|tie/i.test(name));
   for (const name of lanyardMats) {
     count += await applyShadedTint(vrm, name, "#2A63D9", { amount: 0.72, boost: 1.15 });
   }
@@ -623,10 +577,9 @@ async function _matchAlpeccaAccessories(vrm) {
 
 export async function matchAlpeccaDesign(vrm) {
   const hair = await matchAlpeccaHair(vrm);
-  const choker = await matchAlpeccaChoker(vrm);
   const outfit = await _matchAlpeccaOutfit(vrm);
   const accessories = await _matchAlpeccaAccessories(vrm);
-  return { hair, choker, outfit, accessories, total: hair + choker + outfit + accessories };
+  return { hair, outfit, accessories, total: hair + outfit + accessories };
 }
 
 /**
